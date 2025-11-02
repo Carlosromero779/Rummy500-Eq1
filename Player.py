@@ -26,6 +26,13 @@ class Player:
         self.connected = False #Nos permitirá saber si el jugador está conectado al servidor o no
         self.carta_elegida = False  #NUEVO PARA PRUEBA
         self.discarded = False
+
+    def __str__(self):
+        return f"({self.playerId}, {self.playerName})"
+    
+    def __repr__(self):
+        return self.__str__()
+
     # Mét. para permitir que el jugador seleccione cartas para jugar.
     def chooseCard(self, clickPos):
         

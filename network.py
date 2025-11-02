@@ -17,13 +17,14 @@ class NetworkManager:
         self.max_players = None
         self.password = ""
         self.gameName = ""
-        self.playerName = None
+        self.playerName = None 
         self.is_host = False
         self.connected_players = []   #Lista de jugadores
         #self.ready_players = []       #Lista de jugadores listos para iniciar partida
         #self.ready_state = {}       # {'ID_jugador': False, ...}
         #self.game_started = False
         self.running = False
+        self.running_broadcast = False
         self.receivedData = None
         self.lock = threading.Lock()
         self.messagesServer = [] #Mensajes del servidor
@@ -71,14 +72,14 @@ class NetworkManager:
             self.is_host = True
             self.running = True
             #self.connected_players.append((self.server,(self.host, self.port),self.playerName))
-            self.connected_players.append((self.server,(self.host, self.port)))
+            self.connected_players.append((self.server,(self.host, self.port),'Host'))
             print(f"connected_player al INICIO {self.connected_players}")
             print(f"Servidor iniciado en el puerto {self.port}")
             # Hilo para aceptar conexiones
             threading.Thread(target=self.acceptConnections, daemon=True).start()
 
             # Iniciar hilo para broadcast
-            self.running = True
+            self.running_broadcast = True
             self.broadcast_thread = threading.Thread(target=self.broadcast_server, daemon=True)
             self.broadcast_thread.start()
             print(F"HILO PARA EL BROASDCAST... ")
@@ -112,7 +113,7 @@ class NetworkManager:
                     conn.close()
                     continue
                     
-                client_password = pickle.loads(data)
+                client_password, client_name = pickle.loads(data)
                 #print(f"Lo que esta en la clave... {client_password}")
                 #print(f"Lo que esta en la clave sin pickle ... {data}")
                 # Verificar contraseña
@@ -120,19 +121,17 @@ class NetworkManager:
                     
                     if len(self.connected_players) < self.currentServer['max_players']:
                         # Actualizar si el servidor ya está en la lista
-                        existing = next((s for s in self.connected_players if s ==  (conn,addr)), None)
+                        existing = next((s for s in self.connected_players if s ==  (conn,addr,client_name)), None)
                         print(existing)
                         if existing:
                             # Actualizando conexión existente
                             index = self.connected_players.index(existing)
-                            self.connected_players[index]=(conn, addr)
+                            self.connected_players[index]=(conn, addr, client_name)
                         else:
                             #self.connected_players.append((conn,addr,self.currentServer['playerName']))
-                            self.connected_players.append((conn,addr))
+                            self.connected_players.append((conn,addr, client_name))
                             print(f"Anxeando nuevo JUGADOR {self.connected_players}")
-                            print(f"Nuevo jugador conectado {addr}")
-                            print(f"Conexión aceptada de {conn}")
-                            #self.currentServer['currentPlayers'] = len(self.connected_players)
+                            print(f"Nuevo jugador conectado {addr,client_name}")
                         
                             conn.send(pickle.dumps("CONNECTED"))
                             print(f"Conexión aceptada de {addr}")
@@ -142,7 +141,7 @@ class NetworkManager:
                         # Hilo para manejar al jugador
                         threading.Thread(
                             target=self.handlePlayer,
-                            args=(conn, addr),
+                            args=(conn, addr, client_name),
                             daemon=True
                         ).start()
                         
@@ -161,9 +160,9 @@ class NetworkManager:
                     break
 
 
-    def handlePlayer(self, conn, addr):
+    def handlePlayer(self, conn, addr, namePlayer):
         """Maneja la comunicación con un cliente conectado"""
-        player_name = f"Jugador {addr[1]}" #Para identificar al juador por el puerto
+        player_name = f"{namePlayer}" #Para identificar al juador por el puerto
         try:
             while self.running:
                 try:
@@ -195,7 +194,7 @@ class NetworkManager:
                         #pass
                     
                 except Exception as e:
-                    print(f"Error manejando jugador {addr}: {e}")
+                    print(f"Error manejando jugador {player_name}: {e}")   # Se cambió addr por player_name
                     break
                     
         finally:
@@ -248,11 +247,10 @@ class NetworkManager:
         """Envía broadcast anunciando el servidor"""
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            print(f"running {self.running}")
+            print(f"self.running_broadcast {self.running_broadcast}")
             print(f"self.server::  {self.server}")
-            print(f"server   s ::  {s}")
                 
-            while self.running and self.server:
+            while self.running_broadcast and self.server:
                 try:
                     # Actualizar datos del servidor para transmitir
                     # Actualizar número de jugadores
@@ -268,13 +266,17 @@ class NetworkManager:
                     print("No se pudo hacer la transmisión...")
                     break
     
+    def stop_broadcast(self):
+        """Detiene solo el broadcast"""
+        self.running_broadcast = False
+
     def broadcast_message(self, message):
         """Envía un mensaje a todos los clientes conectados excepto al remitente"""
         if not self.connected_players:
             print(" No hay jugadores conectados ")
             return
         
-        print(f"Loqueestaenelmensajedelatransmisión... {message}")
+        #print(f"Loqueestaenelmensajedelatransmisión... {message}")
         disconnectedPlayer = []
         try:
             # Bloqueando el lock antes de acceder a connected_players
@@ -284,11 +286,11 @@ class NetworkManager:
                     connSend = message[1]
                     message1 = message[0]
                     self.messagesServer.append(message1)
-                    print(f"Agregando mensaje de jugador a Lista de mensaje del servidor... {self.messagesServer}")
+                    #print(f"Agregando mensaje de jugador a Lista de mensaje del servidor... {self.messagesServer}")
                 else:
                     message1 = message
                     connSend = None
-                for conn, addr in self.connected_players:
+                for conn, addr, _ in self.connected_players:
                     # No enviar al servidor   El servidor tambien es jugador
                     if conn == self.server:
                         continue
@@ -320,7 +322,7 @@ class NetworkManager:
             print(f"esto es el server {server}")
             
             # Enviar contraseña
-            self.player.send(pickle.dumps(server['password']))
+            self.player.send(pickle.dumps((server['password'],server['playerName'])))
             print("clave enviada...")
             
             # Recibir respuesta
@@ -429,9 +431,9 @@ class NetworkManager:
         # self.lock es un threading.Lock que debe usarse para acceder a variables compartidas
         with self.lock: 
             # 1. Crear una copia de los mensajes recibidos
-            messages = list(self.incoming_messages) 
+            messages = list(self.incoming_messages).copy() 
             # 2. Limpiar la cola de mensajes
-            #self.incoming_messages.clear()
+            self.incoming_messages.clear()
             # 3. Devolver los mensajes
             return messages
         
@@ -440,9 +442,9 @@ class NetworkManager:
         # self.lock es un threading.Lock que debe usarse para acceder a variables compartidas
         with self.lock: 
             # 1. Crear una copia de los mensajes recibidos
-            messages = (self.game_state) 
+            messages = (self.game_state).copy() 
             # 2. Limpiar la cola de mensajes
-            #self.game_state.clear()
+            self.game_state.clear()
             # 3. Devolver los mensajes
             return messages
     def get_moves_game(self):
@@ -478,7 +480,6 @@ class NetworkManager:
             try:
                 self.server.close()
                 self.connected_players.remove(self.server)
-                #########print(f"Cerradaaaa esa mierdaaaaaa no jodaaaaaaaaa")
             except:
                 pass
         if self.player:

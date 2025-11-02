@@ -479,7 +479,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
         for jugador_socket_info in network_manager.connected_players[1:]:
             # Obtener el puerto del cliente
             cliente_port = jugador_socket_info[1][1] 
-            player_cliente = Player( cliente_port, "Jugador" + str(cliente_port)) 
+            cliente_name = jugador_socket_info[2]
+            player_cliente = Player( cliente_port, str(cliente_name)) 
             # Asignando mano inicial a los jugadores... Preguntar a Louis por la función
             players.append(player_cliente)
             #player_cliente.isHand = True
@@ -554,12 +555,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
         if fase == "eleccion":
             screen.blit(fondo_img, (0, 0))  # Nuevo pero se puede quedar :)
 
-        #    # Procesando mensaje con datos de seleccion de cartas y la lista de jugadores...
+            # Procesando mensaje con datos de seleccion de cartas y la lista de jugadores...
             if not network_manager.is_host:
                 # Recuperar los mensajes recibidos del buffer de red
                 msg = network_manager.get_game_state() 
-                #print(f"Este es el mensaje recibido en fase eleccion  {type(msg)} {msg}{msg.get('type')}")
-        #        # Verificar si el mensaje contiene los datos esperados
+                # Verificar si el mensaje contiene los datos esperados
                 if isinstance(msg, dict) and msg.get("type") == "ELECTION_CARDS":
                     print(f"Este es el mensaje recibido en fase eleccion  {type(msg)} {msg}{msg.get('type')}")
                     players[:] = msg.get("players")
@@ -584,8 +584,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 round = received_round
                                 deckForRound = round.pile
                                 mazo_descarte = round.discards
-                                print(f"DEPURACIÓN DECKFORROUND: {[c for c in deckForRound]}")
-                                print("Cliente: Objeto round recibido desde host.")
                             else:
                                 # Crear una instancia mínima de Round y rellenar pilas si vienen en el mensaje
                                 round = Round(players)
@@ -615,70 +613,53 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             mensaje_orden = msg[1].get("orden_str", "")
                             tiempo_inicio_orden = time.time()
                             fase = "mostrar_orden"
-            # Fin procesar Mensajes de INICIO----  Cargar Mazos, Mano, e isHand... PARA EL JUGADOR...
+                # Fin procesar Mensajes de INICIO----  Cargar Mazos, Mano, e isHand... PARA EL JUGADOR...       
 
-            # Procesar eventos  Dentro de la fase "eleccion"
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
+            if network_manager.is_host:
+                from Game import electionPhase
+                playerOrder = electionPhase(players, deck)
+                # Lista de jugadores Ordenada
+                players[:] = playerOrder
+                players[0].isHand = True    # El primer jugador es mano
+                player1 = None
+                
+                #for p in players:
+                if players[0].playerId == host_port:
+                    jugador_local = players[0]
+                    print(f"nombrel del jugador_local   {jugador_local.playerName}")  
 
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                            if network_manager.is_host:
-                                    from Game import electionPhase
-                                    playerOrder = electionPhase(players, deck)
-                                    # Lista de jugadores Ordenada
-                                    players[:] = playerOrder
-                                    players[0].isHand = True    # El primer jugador es mano
-                                    player1 = None
-                                    
-                                    #for p in players:
-                                    if players[0].playerId == host_port:
-                                        jugador_local = players[0]
-                                        print(f"nombrel del jugador_local   {jugador_local.playerName}")  
-
-                                    # Construir mensaje de orden
-                                    orden_str = "Orden de juego:\n"
-                                    for idx, jugador in enumerate(players):
-                                        orden_str += f"{idx+1}. {jugador.playerName}\n"
-                                    # Enviar orden a todos
-                                    ###------NUEVO
-                                    round = startRound(players, screen)[0]
-                                    print(f"deck para la ronda: {[c for c in round.pile]}")
-                                    print(f"descartes de la ronda: {[c for c in round.discards]}")
-                                    print(f"Prueba de isHand: {[p.isHand for p in players]}")
-                                    for c in round.discards:
-                                        mazo_descarte.append(c)
-                                    deckForRound = round.pile
-                                    print(f"   LAs MANOS A REPARTIR ...... {round.hands}")
-                                    ####-----NUEVO
-                                    
-
-                                    
-                                    msgOrden = {
-                                        "type": "PLAYER_ORDER",
-                                        "players": players,
-                                        "orden_str": orden_str,
-                                        "round": round,
-                                        "hands":round.hands,
-                                        "deckForRound": deckForRound,
-                                        "mazo_descarte": mazo_descarte
-                                    }
-                                    network_manager.broadcast_message(msgOrden)
-                                    # Cambiar fase
-                                    mensaje_orden = orden_str.strip()
-                                    tiempo_inicio_orden = time.time()
-                                    fase = "mostrar_orden"
-                            else:
-                                #fase = "mostrar_orden"
-                                pass
-                            break
+                # Construir mensaje de orden
+                orden_str = "Orden de juego:\n"
+                for idx, jugador in enumerate(players):
+                    orden_str += f"{idx+1}. {jugador.playerName}\n"
+                round = startRound(players, screen)[0]
+                print(f"deck para la ronda: {[c for c in round.pile]}")
+                print(f"descartes de la ronda: {[c for c in round.discards]}")
+                for c in round.discards:
+                    mazo_descarte.append(c)
+                deckForRound = round.pile
+                print(f"Las manos a repartir ...... {round.hands}")
+                # Enviar orden a todos
+                msgOrden = {
+                    "type": "PLAYER_ORDER",
+                    "players": players,
+                    "orden_str": orden_str,
+                    "round": round,
+                    "hands":round.hands,
+                    "deckForRound": deckForRound,
+                    "mazo_descarte": mazo_descarte
+                }
+                network_manager.broadcast_message(msgOrden)
+                # Cambiar fase
+                mensaje_orden = orden_str.strip()
+                tiempo_inicio_orden = time.time()
+                fase = "mostrar_orden"
 
             # Dibujar
             screen.blit(fondo_img, (0, 0))
             #mostrar_cartas_eleccion(screen, cartas_eleccion)
             pygame.display.flip()
             continue  # <-- Esto es CLAVE: salta el resto del ciclo si estás en la fase de elección
-            # --- FIN FASE DE ELECCIÓN ---
         # Fin de la fase "eleccion"   ---- Está alineado... Mejor ubicacion..
 
         
@@ -688,7 +669,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
             msgGame = network_manager.get_moves_game()
         else:
             msgGame = network_manager.get_moves_gameServer()
-        #msgGame = network_manager.get_moves_game()
         if msgGame:
             print(f"TURNO DEL JUGADOR: {[p.playerName for p in players if p.isHand]}")
             print(f"llego esto de get_moves_game.. {type(msgGame)} {msgGame}")
@@ -739,7 +719,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 deckForRound = mazoBocaAbajo #round.pile
 
             elif isinstance(msg,dict) and msg.get("type")=="DESCARTE":
-                print(f"Prueba de isHand ANTES JUGADOR: {[p.isHand for p in players]}")
+                #print(f"Prueba de isHand ANTES JUGADOR: {[p.isHand for p in players]}")
                 player_id_que_descarto = msg.get("playerId")
                 mano_restante = msg.get("playerHand")  # Lista de objetos Card
                 cartasDescartadas = msg.get("cartas_descartadas")
@@ -793,10 +773,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         #mazo_descarte = mazo_de_descarte
                         #zona_cartas = zonaCartas
                         pass
+        # Fin procesar mensajes del juego...
         ###### SIgo aqui...
             
-        #print('QUE MIERRRRDAAAAAAAAAA')
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -835,18 +814,24 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             mensaje_temporal = "No puedes tomar cartas porque no es tu turno."
                             mensaje_tiempo = time.time()
                         else:
-                            print(f"jugadors {[p for p in players]}")
-                            print(f"El jugador local {jugador_local}")
+                            #print(f"jugadors {[p for p in players]}")
+                            #print(f"El jugador local {jugador_local}")
                             cardTaken = drawCard(jugador_local, round, False)
                             #jugador_local.playerHand.append(cardTaken)
                             jugador_local.playerHand = round.hands[jugador_local.playerId]
                             jugador_local.cardDrawn = True
-                            print(f"DEPURACION DECKFORROUND AL TOMAR CARTA: {[c for c in deckForRound]}")
+                            #print(f"DEPURACION DECKFORROUND AL TOMAR CARTA: {[c for c in deckForRound]}")
 
                             if not deckForRound or len(deckForRound) == 0:
                                 print(f"DECKFORROUND VACÍOOOOOO: {[c for c in deckForRound]}")
+                                refillDeck(round)
+                                deckForRound = round.pile
+                                mazo_descarte = round.discards 
 
-                            visual_hand = compactar_visual_hand(visual_hand)
+                                print(f"DECKFORROUND Recargado :)  ... : {[c for c in deckForRound]}")
+                                
+
+                            visual_hand = compactar_visual_hand(visual_hand) 
                             msgTomarC = {
                                 "type": "TOMAR_CARTA",
                                 "cardTaken": cardTaken,
@@ -867,9 +852,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             mensaje_temporal = "No puedes tomar cartas porque no es tu turno."
                             mensaje_tiempo = time.time()
                         else:
-                            print(f"Mano del jugador ANTES DE tomar la carta: {[str(c) for c in jugador_local.playerHand]}")
+                            #print(f"Mano del jugador ANTES DE tomar la carta: {[str(c) for c in jugador_local.playerHand]}")
                             cardTakenD = drawCard(jugador_local, round, True)
-                            print(f"Mano del jugador al tomar la carta:........ {[str(c) for c in jugador_local.playerHand]}")
+                            #print(f"Mano del jugador al tomar la carta:........ {[str(c) for c in jugador_local.playerHand]}")
 
                             if mazo_descarte:
                                 mazo_descarte.pop()  # Quita la carta del mazo de descarte
@@ -948,12 +933,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             if msgBajarse:
                                 network_manager.broadcast_message(msgBajarse)
                             else: 
-                                print("Mensaje vacio... Noe nviado")
+                                print("Mensaje vacio... No enviado")
                         else:
                             if msgBajarse:
                                 network_manager.sendData(msgBajarse)
                             else: 
-                                print("Mensaje vacio... Noe nviado")
+                                print("Mensaje vacio... No enviado")
 
                     elif nombre == "Descarte":
                             # Determinar la carta seleccionada (click sobre Carta_x) o usar la zona de arrastre (zona_cartas[2])
@@ -1025,18 +1010,19 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                         mazo_descarte.append(cartas_descartadas[0])
                                         #break
                                     else:
-                                        mazo_descarte.append(carta)
+                                        #mazo_descarte.append(carta)
+                                        mazo_descarte = round.discards  #Luego de reiniciado el mazo, se duplicaron las cartas
                                 zona_cartas[2] = []
-                                print(f"Mano del jugador: {[str(c) for c in jugador_local.playerHand]}")
-                                print(f"Prueba de isHand ANTES: {[p.isHand for p in players]}")
+                                #print(f"Mano del jugador: {[str(c) for c in jugador_local.playerHand]}")
+                                #print(f"Prueba de isHand ANTES: {[p.isHand for p in players]}")
                                 for idx, p in enumerate(players):
                                     if p.playerId == jugador_local.playerId:
-                                        print(f"indice... Jugador_local... {idx}")
+                                        #print(f"indice... Jugador_local... {idx}")
                                         next_idx = (idx + 1) % len(players)
-                                        print(f"indice... proximo Jugador_local... {next_idx}")
+                                        #print(f"indice... proximo Jugador_local... {next_idx}")
                                         break
                                 players[next_idx].isHand = True
-                                print(f"Prueba de isHand DESPUES: {[p.isHand for p in players]}")
+                                #print(f"Prueba de isHand DESPUES: {[p.isHand for p in players]}")
 
                                 
                                 msgDescarte = {
@@ -1045,7 +1031,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     "playerHand": jugador_local.playerHand,
                                     "playerId": jugador_local.playerId,
                                     "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
-                                    "zona_cartas": zona_cartas,
                                     "players": players,   # La lista deberia Mantener el orden, pero con la MANO actualizada
                                     "deckForRound":deckForRound,
                                     "round": round
@@ -1080,7 +1065,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     "playerHand": jugador_local.playerHand,
                                     "playerId": jugador_local.playerId,
                                     "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
-                                    "zona_cartas": zona_cartas,
                                     "round": round
                                 }
                             if network_manager.is_host:
@@ -1277,10 +1261,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 zona_cartas = [[], [], []]
                 cartas_ocultas.clear()
                 organizar_habilitado = True  # Vuelve a habilitar organización
-        
-        process_received_messagesUi2()  # ????
+        # Fin evento de pygame...
+
+        process_received_messagesUi2()  
         #------ Hasta aqui el bucle de event de PYGAME ------------
-        #print("Luiggy jodiendo.... :D ")
 
         # Sincroniza visual_hand con el backend si hay nuevas cartas
         if len(visual_hand) != len(jugador_local.playerHand) or any(c not in visual_hand for c in jugador_local.playerHand):
@@ -2130,7 +2114,7 @@ def process_received_messagesUi2():
                     print(f"Estado del juego actualizado: {network_manager.game_state}")
                 elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE"]:
                     network_manager.moves_gameServer.append(data)
-                    print(f" Jugada del jugador recibida:{data.get("type"),network_manager.moves_game}")
+                    print(f" Jugada del jugador recibida:{data.get("type"),network_manager.moves_gameServer}")
                 # Si es otro tipo de estructura/mensaje no clasificado
                 else:
                     network_manager.incoming_messages.append(("raw", data)) # Opcional: para mensajes no clasificados

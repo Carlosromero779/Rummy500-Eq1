@@ -19,4 +19,4 @@ def discardCard(player, roundPlayed, card):
 def refillDeck(roundPlayed):
     if len(roundPlayed.pile) == 0:  #Si el mazo se queda sin cartas, sacamos las cartas del montón de descartes y las ponemos en el mazo
         roundPlayed.pile = roundPlayed.discards[:-1]
-        roundPlayed.discards = roundPlayed.discards[-1:]  #Dejamos la última carta del montón de descartes como la única carta en el montón de descartes
+        roundPlayed.discards = [roundPlayed.discards.pop()] #roundPlayed.discards[-1:]  #Dejamos la última carta del montón de descartes como la única carta en el montón de descartes

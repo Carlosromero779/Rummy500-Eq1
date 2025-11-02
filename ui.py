@@ -585,10 +585,12 @@ class   UIManager:
             # Información del servidor
             server_text = smaller_font.render(f"{self.servers[0]['name']}: Jugadores {self.servers[0]['currentPlayers']}/{self.servers[0]['max_players']}", True, (0, 0, 0))
             self.SCREEN.blit(server_text, (input_req_x + 370, box_y + 50))
-                       
+            print(" serveeeeeeeerrrrrrrr")           
         else:
             noServers = smaller_font.render("No hay servidores :( ", True, (0,0,0))
             self.SCREEN.blit(noServers, (input_req_x + 370, box_y + 50))
+            print(" serveeeeeeeerrrrrrrr nooooooooooooooooooooooooooooooooooooooooo")           
+
         
         if self.response == "No ha seleccionado un servidor":
             ####noSelectServer = smaller_font.render("No ha seleccionado un servidor", True, (0,0,0))
@@ -1086,8 +1088,8 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         if self.servers:
                             self.servers[0]['password'] = password
                             if self.join_player_input_box.text != "":
-                                playerName = self.join_player_input_box.text  # Convierte jugadores a número
-                            else:  # Si no se escribe un número válido
+                                playerName = self.join_player_input_box.text  
+                            else:  
                                 playerName = f"Jugador {self.servers[0]['currentPlayers']}"  # Valor por defecto
                             
                             self.servers[0]['playerName'] = playerName
@@ -1136,8 +1138,11 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         self.current_screen = "play"
                         self.network_manager.connected_players.clear()
                         self.network_manager.stop()
+                        self.network_manager.stop_broadcast()
+                        
                         if self.selectedServer:
-                            self.selectedServer['currentPlayers'] = len(self.network_manager.connected_players)
+                            self.selectedServer.clear()
+                        #    self.selectedServer['currentPlayers'] = len(self.network_manager.connected_players)
                         print(f"Servidor cerrado...")
                     elif self.PLAY_GAME_BUTTON.checkForInput(event.pos):
                         #++++++++++++++++++++++++++++++++++++++++
@@ -1147,6 +1152,9 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
                                 # Envía la señal a todos los clientes game_started = True
                                 self.network_manager.startGame()
+                                self.network_manager.stop_broadcast()
+                                print("Cerrada la transmision de la informacion del servido. Juego iniciado")
+
                             else:
                                 print("Se necesitan al menos dos jugadores")
                         else:
