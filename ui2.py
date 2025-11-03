@@ -791,7 +791,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
         print(f" puerto del servidor {jugadores[0][1][1]}")
         host_port = jugadores[0][1][1]
         # --- Jugador 1 ---
-        player1 = Player(host_port, "Host")
+        player1 = Player(host_port, network_manager.playerName)
 
         players.append(player1)
         #player1.isHand = True

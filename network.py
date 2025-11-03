@@ -56,7 +56,7 @@ class NetworkManager:
             return "127.0.0.1" #Local IP
         
 
-    def start_server(self, gameName, password, max_players):
+    def start_server(self, gameName, password, max_players,nombre_sala):
         self.host = self.getLocalIP() #Obteniendo IP del Creador (SERVIDOR)
         """Inicia el servidor del juego"""
         try:
@@ -64,15 +64,15 @@ class NetworkManager:
             self.server.bind((self.host, self.port))
             self.server.listen(max_players)
             
-            self.gameName = gameName
-            self.playerName = 'Host'   #Falta input_box 
+            self.gameName = nombre_sala
+            self.playerName = gameName   #Falta input_box 
             playerName = ""
             self.password = password
             self.max_players = max_players
             self.is_host = True
             self.running = True
             #self.connected_players.append((self.server,(self.host, self.port),self.playerName))
-            self.connected_players.append((self.server,(self.host, self.port),'Host'))
+            self.connected_players.append((self.server,(self.host, self.port),self.playerName))
             print(f"connected_player al INICIO {self.connected_players}")
             print(f"Servidor iniciado en el puerto {self.port}")
             # Hilo para aceptar conexiones
@@ -85,7 +85,7 @@ class NetworkManager:
             print(F"HILO PARA EL BROASDCAST... ")
 
             self.currentServer = {
-            'name': gameName,
+            'name': self.gameName,
             'playerName': self.playerName,
             'ip': self.host,
             'port': self.port,

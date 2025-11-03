@@ -546,11 +546,12 @@ class   UIManager:
         # Información del servidor (centrada sobre los inputs)
         if self.servers:
             server_text = smaller_font.render(f"{self.servers[0]['name']}: Jugadores {self.servers[0]['currentPlayers']}/{self.servers[0]['max_players']}", True, (0, 0, 0))
-            self.SCREEN.blit(server_text, (input_req_x + 370, box_y + 50))
-                       
+            server_rect = server_text.get_rect(center=(self.SCREEN_WIDTH // 2, box_y + 50))
+            self.SCREEN.blit(server_text, server_rect)     
         else:
-            noServers = smaller_font.render("No hay servidores :( ", True, (0,0,0))
-            self.SCREEN.blit(noServers, (input_req_x + 370, box_y + 50))
+            noServers = smaller_font.render("No hay Salas :( ", True, (0,0,0))
+            noServers_rect = noServers.get_rect(center=(self.SCREEN_WIDTH // 2, box_y + 50))
+            self.SCREEN.blit(noServers, noServers_rect)
         
         if self.response == "No ha seleccionado un servidor":
             ####noSelectServer = smaller_font.render("No ha seleccionado un servidor", True, (0,0,0))
@@ -930,13 +931,14 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 mouse_pos = pygame.mouse.get_pos()
                 if self.current_screen == "create":
                     if self.crear_partida_img_rect.collidepoint(mouse_pos):
+                        nombre_sala = self.host_input_box.text
                         nombre = self.name_input_box.text
                         password = self.password_input_box.text
                         try:
                             max_players = int(self.max_players_input_box.text)
                         except:
                             max_players = 7
-                        exito = self.network_manager.start_server(nombre, password, max_players)
+                        exito = self.network_manager.start_server(nombre, password, max_players,nombre_sala)
                         print("Servidor creado" if exito else "Error al crear servidor")
                         self.current_screen = "lobby"
             if event.type == pygame.MOUSEBUTTONDOWN:  # Si se hace clic con el mouse
@@ -1016,6 +1018,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     if self.CREATE_BACK_BUTTON.checkForInput(event.pos):  # Botón "volver"
                         self.current_screen = "play"  # Regresa al menú de jugar
                     elif self.CREATE_GAME_BUTTON.checkForInput(event.pos):  # Botón "crear partida"
+                        nombre_sala = self.host_input_box.text  # Nombre de la sala
                         nombre = self.name_input_box.text  # Nombre de la partida
                         password = self.password_input_box.text  # Contraseña
                         try:
@@ -1023,7 +1026,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         except:  # Si no se escribe un número válido
                             max_players = 7  # Valor por defecto
                         # Intenta crear el servidor
-                        exito = self.network_manager.start_server(nombre, password, max_players)
+                        exito = self.network_manager.start_server(nombre, password, max_players,nombre_sala)
                         print("Servidor creado" if exito else "Error al crear servidor")
                         print(self.network_manager.host,self.network_manager.gameName)
                         self.current_screen = "lobby"  # Cambia a la pantalla lobby
