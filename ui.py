@@ -4,6 +4,7 @@ import threading
 import pickle
 import time
 from network import NetworkManager
+import sys
 
 class Button:
     def __init__(self, image, pos, text_input, font, base_color, hovering_color, size=(250, 100), scale_factor=1.1):
@@ -861,7 +862,9 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             # Manejo eventos globales
             for event in events:
                 if event.type == pygame.QUIT:
-                    pygame.quit()                #Cuando la ventana cambia de tamaño, volvemos a calcular la posición y el tamaño de la caja de reglas y del botón "volver" para que todo se adapte.
+                    pygame.quit()
+                    sys.exit()
+                #Cuando la ventana cambia de tamaño, volvemos a calcular la posición y el tamaño de la caja de reglas y del botón "volver" para que todo se adapte.
                 elif event.type == pygame.VIDEORESIZE:
                     self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
                     self.SCREEN = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.RESIZABLE)
