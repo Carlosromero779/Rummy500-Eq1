@@ -205,6 +205,327 @@ def get_card_image(card):
             pygame.draw.rect(img, (200, 200, 200), img.get_rect(), border_radius=8)
             return img
 
+#CAMBIO 1
+# --- Añadir en ui2.py (zona de utilidades/UI) ---
+def draw_simple_button(surface, rect, text, font, bg=(70,70,70), fg=(255,255,255)):
+    pygame.draw.rect(surface, bg, rect, border_radius=8)
+    pygame.draw.rect(surface, (180,180,180), rect, 2, border_radius=8)
+    txt = font.render(text, True, fg)
+    tr = txt.get_rect(center=rect.center)
+    surface.blit(txt, tr)
+
+
+#COMPRAR CARTA
+
+def confirm_buy_card(screen, card, WIDTH, HEIGHT, ASSETS_PATH, font):
+    #def confirm_replace_joker(screen, WIDTH, HEIGHT, ASSETS_PATH):
+    """
+    Muestra una ventana modal que pregunta si el jugador quiere comprar la carta.
+    - card: objeto Card (puede ser None para mostrar reverso).
+    - Devuelve True si pulsa SI, False si pulsa NO o cierra.
+    Bloqueante: procesa su propio loop hasta respuesta.
+    """
+    clock = pygame.time.Clock()
+    # Captura del fondo actual para mostrarlo detrás del modal (asegura transparencia visual)
+    try:
+        background_snapshot = screen.copy()
+    except Exception:
+        background_snapshot = pygame.Surface((WIDTH, HEIGHT))
+        background_snapshot.blit(screen, (0, 0))
+
+    # Overlay semi-transparente (creado una vez)
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 140))  # ajuste alpha aquí (0=totalmente transparente, 255=opaco)
+
+
+    #Cambio 3 (Tamaño del Rectángulo de 420,240 a 330,320)
+    # Tamaños y rects
+    w, h = 330, 320
+    #Cambio 3
+
+    x = (WIDTH - w)//2
+    y = (HEIGHT - h)//2
+    modal_rect = pygame.Rect(x, y, w, h)
+    padding = 16
+
+
+    #Cambio 4 (Centrar Carta)
+    # Rect para imagen de carta
+    card_w, card_h = 100, 150
+    card_rect = pygame.Rect(x + (w - card_w)//2, y + (h - card_h)//2, card_w, card_h)
+    #Cambio 4
+
+
+    # Botones SI / NO
+    btn_w, btn_h = 120, 44
+    btn_yes = pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h)
+    btn_no = pygame.Rect(x + w - padding - 2*btn_w - 12, y + h - padding - btn_h, btn_w, btn_h)
+
+    # Preparar imagen de carta (usar get_card_image existente)
+    try:
+        if card is None:
+            card_img = get_card_image("back")
+        else:
+            card_img = get_card_image(card)
+    except Exception:
+        card_img = pygame.Surface((card_w, card_h))
+        card_img.fill((200,200,200))
+    card_img = pygame.transform.smoothscale(card_img, (card_w, card_h))
+
+    #Cambio 5 (Tipografía)
+    #Descartamos: title_font = pygame.font.SysFont("arial", 20, bold=True)
+    font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
+    title_font = pygame.font.Font(font_path, 16)
+    info_font = pygame.font.Font(font_path, 12)
+    #Cambio 5
+
+
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                return False
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                mx, my = ev.pos
+                if btn_yes.collidepoint(mx, my):
+                    return True
+                if btn_no.collidepoint(mx, my):
+                    return False
+
+        # Dibujo del modal: primero el fondo capturado, luego overlay semi-transparente
+        screen.blit(background_snapshot, (0, 0))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, (40,40,40), modal_rect, border_radius=12)
+        pygame.draw.rect(screen, (150,150,150), modal_rect, 2, border_radius=12)
+
+        # Texto
+        title = title_font.render("Comprar carta", True, (230,230,230))
+        screen.blit(title, (x + padding, y + padding))
+
+        
+        #Cambio 6 (Separar Texto)
+        info = info_font.render("¿Deseas comprar esta carta", True, (200,200,200))
+        screen.blit(info, (x + padding, y + padding + 30))
+        info2 = info_font.render("del descarte?", True, (200,200,200))
+        screen.blit(info2, (x + padding, y + padding + 50))
+        #Cambio 6
+
+
+        # Dibuja la carta
+        screen.blit(card_img, card_rect.topleft)
+        # Mostrar nombre de carta debajo
+        name_txt = info_font.render(str(card) if card is not None else "?", True, (230,230,230))
+        nt = name_txt.get_rect(midtop=(card_rect.centerx, card_rect.bottom + 6))
+        screen.blit(name_txt, nt)
+
+        # Botones
+        draw_simple_button(screen, btn_no, "No", info_font, bg=(120,40,40))
+        draw_simple_button(screen, btn_yes, "Si", info_font, bg=(40,120,40))
+
+        pygame.display.flip()
+        clock.tick(60)
+#COMPRAR CARTA
+
+#CambioJoker #WhySoSerious
+
+def confirm_joker(screen, card, WIDTH, HEIGHT, ASSETS_PATH, font):
+    #def confirm_replace_joker(screen, WIDTH, HEIGHT, ASSETS_PATH):
+    """
+    Muestra una ventana modal que pregunta si el jugador quiere comprar la carta.
+    - card: objeto Card (puede ser None para mostrar reverso).
+    - font: pygame.font.Font ya creado para renderizar texto.
+    Devuelve True si pulsa Si, False si pulsa No o cierra.
+    Bloqueante: procesa su propio loop hasta respuesta.
+    """
+    clock = pygame.time.Clock()
+    try:
+        background_snapshot = screen.copy()
+    except Exception:
+        background_snapshot = pygame.Surface((WIDTH, HEIGHT))
+        background_snapshot.blit(screen, (0, 0))
+
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 140))
+
+    w, h = 330, 370
+    x = (WIDTH - w)//2
+    y = (HEIGHT - h)//2
+    modal_rect = pygame.Rect(x, y, w, h)
+    padding = 16
+
+    card_w, card_h = 100, 150
+    card_rect = pygame.Rect(x + (w - card_w)//2, y + (h - card_h)//2, card_w, card_h)
+
+    btn_w, btn_h = 140, 44
+    btn_replace = pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h)
+    btn_continue = pygame.Rect(x + w - padding - 2*btn_w - 12, y + h - padding - btn_h, btn_w, btn_h)
+
+    # Mostrar siempre la imagen del Joker
+    try:
+        card_img = get_card_image(Card("Joker", "", joker=True))
+    except Exception:
+        card_img = pygame.Surface((card_w, card_h))
+        card_img.fill((200,200,200))
+    card_img = pygame.transform.smoothscale(card_img, (card_w, card_h))
+    font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
+    title_font = pygame.font.Font(font_path, 16)
+    info_font = pygame.font.Font(font_path, 12)
+
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                return False
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                mx, my = ev.pos
+                if btn_replace.collidepoint(mx, my):
+                    return True
+                if btn_continue.collidepoint(mx, my):
+                    return False
+
+        screen.blit(background_snapshot, (0, 0))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, (40,40,40), modal_rect, border_radius=12)
+        pygame.draw.rect(screen, (150,150,150), modal_rect, 2, border_radius=12)
+
+        title = title_font.render("Jugada con Joker", True, (230,230,230))
+        screen.blit(title, (x + padding, y + padding))
+
+        info1 = info_font.render("¿Deseas continuar la", True, (200,200,200))
+        info2 = info_font.render("secuencia o reemplazar", True, (200,200,200))
+        info3 = info_font.render("al Joker?", True, (200,200,200))
+        screen.blit(info1, (x + padding, y + padding + 30))
+        screen.blit(info2, (x + padding, y + padding + 50))
+        screen.blit(info3, (x + padding, y + padding + 70))
+
+        screen.blit(card_img, card_rect.topleft)
+        name_txt = info_font.render("Joker", True, (230,230,230))
+        nt = name_txt.get_rect(midtop=(card_rect.centerx, card_rect.bottom + 6))
+        screen.blit(name_txt, nt)
+
+        draw_simple_button(screen, btn_continue, "Seguir", info_font, bg=(120,40,40))
+        draw_simple_button(screen, btn_replace, "Reemplazar", info_font, bg=(40,120,40))
+
+        pygame.display.flip()
+        clock.tick(60)
+#CambioJoker #WhySoSerious
+    '''"""
+    Muestra una ventana modal que pregunta si el jugador quiere comprar la carta.
+    - card: objeto Card (puede ser None para mostrar reverso).
+    - Devuelve True si pulsa SI, False si pulsa NO o cierra.
+    Bloqueante: procesa su propio loop hasta respuesta.
+    """
+    clock = pygame.time.Clock()
+    # Captura del fondo actual para mostrarlo detrás del modal (asegura transparencia visual)
+    try:
+        background_snapshot = screen.copy()
+    except Exception:
+        background_snapshot = pygame.Surface((WIDTH, HEIGHT))
+        background_snapshot.blit(screen, (0, 0))
+
+    # Overlay semi-transparente (creado una vez)
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 140))  # ajuste alpha aquí (0=totalmente transparente, 255=opaco)
+
+
+    #Cambio 3 (Tamaño del Rectángulo de 420,240 a 330,320)
+    # Tamaños y rects
+    w, h = 330, 320
+    #Cambio 3
+
+    x = (WIDTH - w)//2
+    y = (HEIGHT - h)//2
+    modal_rect = pygame.Rect(x, y, w, h)
+    padding = 16
+
+
+    #Cambio 4 (Centrar Carta)
+    # Rect para imagen de carta
+    card_w, card_h = 100, 150
+    ''' '''Descartamos: card_rect = pygame.Rect(x + padding, y + (h - card_h)//2, card_w, card_h)''' '''
+    card_rect = pygame.Rect(x + (w - card_w)//2, y + (h - card_h)//2, card_w, card_h)
+    #Cambio 4
+
+
+    # Botones SI / NO
+    btn_w, btn_h = 120, 44
+    btn_yes = pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h)
+    btn_no = pygame.Rect(x + w - padding - 2*btn_w - 12, y + h - padding - btn_h, btn_w, btn_h)
+
+    # Preparar imagen de carta (usar get_card_image existente)
+    try:
+        if card is None:
+            card_img = get_card_image("back")
+        else:
+            card_img = get_card_image(card)
+    except Exception:
+        card_img = pygame.Surface((card_w, card_h))
+        card_img.fill((200,200,200))
+    card_img = pygame.transform.smoothscale(card_img, (card_w, card_h))
+
+    #Cambio 5 (Tipografía)
+    ''' '''Descartamos: title_font = pygame.font.SysFont("arial", 20, bold=True)
+    info_font = font_small''' '''
+    font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
+    title_font = pygame.font.Font(font_path, 16)
+    info_font = pygame.font.Font(font_path, 12)
+    #Cambio 5
+
+
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                return False
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                mx, my = ev.pos
+                if btn_yes.collidepoint(mx, my):
+                    return True
+                if btn_no.collidepoint(mx, my):
+                    return False
+
+        # Dibujo del modal: primero el fondo capturado, luego overlay semi-transparente
+        screen.blit(background_snapshot, (0, 0))
+        screen.blit(overlay, (0, 0))
+
+        pygame.draw.rect(screen, (40,40,40), modal_rect, border_radius=12)
+        pygame.draw.rect(screen, (150,150,150), modal_rect, 2, border_radius=12)
+
+        # Texto
+        title = title_font.render("Comprar carta", True, (230,230,230))
+        screen.blit(title, (x + padding, y + padding))
+
+        
+        #Cambio 6 (Separar Texto)
+        ''' '''info = info_font.render("¿Deseas comprar esta carta del descarte?", True, (200,200,200))
+        screen.blit(info, (x + padding, y + padding + 30))''' '''
+        info = info_font.render("¿Deseas comprar esta", True, (200,200,200))
+        info2 = info_font.render("carta del descarte?", True, (200,200,200))
+        screen.blit(info, (x + padding, y + padding + 30))
+        screen.blit(info2, (x + padding, y + padding + 50))
+        #Cambio 6
+
+
+        # Dibuja la carta
+        screen.blit(card_img, card_rect.topleft)
+        # Mostrar nombre de carta debajo
+        name_txt = info_font.render(str(card) if card is not None else "?", True, (230,230,230))
+        nt = name_txt.get_rect(midtop=(card_rect.centerx, card_rect.bottom + 6))
+        screen.blit(name_txt, nt)
+
+        # Botones
+        draw_simple_button(screen, btn_no, "No", info_font, bg=(120,40,40))
+        draw_simple_button(screen, btn_yes, "Si", info_font, bg=(40,120,40))
+
+        pygame.display.flip()
+        clock.tick(60)'''
+#CAMBIO 1 
+
 def draw_player_hand(player, rect, cuadros_interactivos=None, cartas_ref=None, ocultas=None):
     """
     Dibuja la mano del jugador alineada horizontalmente, solapada, sin curva ni inclinación.
@@ -684,15 +1005,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
         
         # --- FASE DE JUEGO NORMAL ---
         # Procesando mensajes del juego
-        if not network_manager.is_host:
-            msgGame = network_manager.get_moves_game()
-        else:
-            msgGame = network_manager.get_moves_gameServer()
-        #msgGame = network_manager.get_moves_game()
+        msgGame = network_manager.get_moves_game()
+        #print(f"llego esto de get_moves_game")
+        
         if msgGame:
             print(f"TURNO DEL JUGADOR: {[p.playerName for p in players if p.isHand]}")
             print(f"llego esto de get_moves_game.. {type(msgGame)} {msgGame}")
-        
         for msg in msgGame:
             if isinstance(msg,dict) and msg.get("type")=="BAJARSE":
                 player_id_que_se_bajo = msg.get("playerId")
@@ -702,12 +1020,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 round = msg.get("round")
 
                 print(f"Mensaje de BAJARSE recibido del Player ID: {player_id_que_se_bajo}")
-                for p in players:
-                    if p.playerId == player_id_que_se_bajo:
-                        p.playerHand = mano_restante
-                        p.jugadas_bajadas = jugadas_en_mesa
-                        p.playMade = Jugadas_en_mesa2
-            
+                #for p in players:
+                    #if p.playerId == player_id_que_se_bajo:
+                        #p.playerHand = mano_restante
+                        #p.jugadas_bajadas = jugadas_en_mesa
+                        #p.playMade = Jugadas_en_mesa2
             elif isinstance(msg,dict) and msg.get("type")=="TOMAR_DESCARTE":
                 player_id_que_tomoD = msg.get("playerId")
                 mano_restante = msg.get("playerHand")  # Lista de objetos Card
@@ -722,6 +1039,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         #pass
                 cardTakenD = carta_tomada
                 mazo_descarte = mazo_de_descarte   #round.discards #mazo_de_descarte
+                print(f"probando el PILE... {round.pile}")
 
             elif isinstance(msg,dict) and msg.get("type")=="TOMAR_CARTA":
                 player_id_que_tomoC = msg.get("playerId")
@@ -742,28 +1060,38 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 print(f"Prueba de isHand ANTES JUGADOR: {[p.isHand for p in players]}")
                 player_id_que_descarto = msg.get("playerId")
                 mano_restante = msg.get("playerHand")  # Lista de objetos Card
+                zonaCartas = msg.get("zona_cartas")  # Lista con las combinaciones (tríos/escaleras)
                 cartasDescartadas = msg.get("cartas_descartadas")
                 mazo_de_descarte = msg.get("mazo_descarte")
                 players[:] = msg.get("players")
-                deck_for_round = msg.get("deckForRound")
                 round = msg.get("round")
                 
+                print(f"Prueba de isHand DESPUES JUGADOR: {[p.isHand for p in players]}")
+                print(f"Mensaje de DESCARTE recibido del Player ID: {player_id_que_descarto}")
+                # Buscamos al jugador que descartó y asignar el turno al siguiente (circular)
+                
+                #-----------
                 received_round = msg.get("round")
                 
                 if received_round:
                     round = received_round
                     deckForRound = round.pile
                     mazo_descarte = round.discards
+                    print(f"DEPURACIÓN DECKFORROUND     DESCARTE: {[c for c in deckForRound]}")
+                    print("Cliente: Objeto round recibido desde host.          DESCARTE")
                 else:
                     # Crear una instancia mínima de Round y rellenar pilas si vienen en el mensaje
                     round = Round(players)
-                    deck_for_round = msg.get("deckForRound")
-                    mazo_descarte_msg = msg.get("mazo_descarte")
+                    deck_for_round = msg[1].get("deckForRound")
+                    mazo_descarte_msg = msg[1].get("mazo_descarte")
                     if deck_for_round is not None:
                         round.pile = list(deck_for_round)
                     if mazo_descarte_msg is not None:
                         round.discards = list(mazo_descarte_msg)
+                    # asegurar que round.players apunte a la lista de objetos Player
                     round.players = players
+                    print("Cliente: creado Round local con pile/discards recibidos.           DESCARTE")
+                #-----------
 
                 for p in players:
                     if network_manager.is_host:
@@ -775,13 +1103,18 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         if p.isHand and p.playerId == puerto_local:
                             jugador_local = p
                             break
+                       
+                print(f"El jugador local es MANO {jugador_local.isHand,jugador_local.playerName}")
+                print(f"Prueba de isHand DESPUES JUGADOR: {[p.isHand for p in players]}")
 
                 cartas_descartadas = cartasDescartadas
                 mazo_descarte = mazo_de_descarte
+                zona_cartas = zonaCartas
                 
             elif isinstance(msg,dict) and msg.get("type")=="COMPRAR_CARTA":   # Revisar la lógica... No vi la función append>>> Por es lo digo
                 player_id_que_tomoC = msg.get("playerId")
                 mano_restante = msg.get("playerHand")  # Lista de objetos Card
+                zonaCartas = msg.get("zona_cartas")  # Lista con las combinaciones (tríos/escaleras)
                 cartasDescartadas = msg.get("cartas_descartadas")
                 round = msg.get("round")
 
@@ -797,6 +1130,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
             
         #print('QUE MIERRRRDAAAAAAAAAA')
 
+        #for jugador_local in players:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -838,8 +1172,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             print(f"jugadors {[p for p in players]}")
                             print(f"El jugador local {jugador_local}")
                             cardTaken = drawCard(jugador_local, round, False)
-                            #jugador_local.playerHand.append(cardTaken)
-                            jugador_local.playerHand = round.hands[jugador_local.playerId]
+                            jugador_local.playerHand.append(cardTaken)
                             jugador_local.cardDrawn = True
                             print(f"DEPURACION DECKFORROUND AL TOMAR CARTA: {[c for c in deckForRound]}")
 
@@ -873,8 +1206,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                             if mazo_descarte:
                                 mazo_descarte.pop()  # Quita la carta del mazo de descarte
-                            #jugador_local.playerHand.append(cardTakenD)
-                            jugador_local.playerHand = round.hands[jugador_local.playerId]
+                            jugador_local.playerHand.append(cardTakenD)
                             register_taken_card(jugador_local, cardTakenD)
                             mensaje_temporal = "Tomaste una carta: no puedes descartarla este turno."
                             mensaje_tiempo = time.time()
@@ -921,8 +1253,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             for carta in trios_bajados + seguidillas_bajadas:
                                 if carta in visual_hand:
                                     visual_hand.remove(carta)
-                            for i, jugada in enumerate(jugador_local.playMade):
-                                print(f"Lainfo de jugador_local>>>>   {[str(c) for c in jugada["trio"]]}")
                         else:
                             cartas_ocultas.clear()
                             zona_cartas[0] = []
@@ -1029,6 +1359,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 zona_cartas[2] = []
                                 print(f"Mano del jugador: {[str(c) for c in jugador_local.playerHand]}")
                                 print(f"Prueba de isHand ANTES: {[p.isHand for p in players]}")
+                               
                                 for idx, p in enumerate(players):
                                     if p.playerId == jugador_local.playerId:
                                         print(f"indice... Jugador_local... {idx}")
@@ -1046,48 +1377,54 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     "playerId": jugador_local.playerId,
                                     "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
                                     "zona_cartas": zona_cartas,
-                                    "players": players,   # La lista deberia Mantener el orden, pero con la MANO actualizada
-                                    "deckForRound":deckForRound,
-                                    "round": round
+                                    "players": players   # La lista deberia Mantener el orden, pero con la MANO actualizada
+                                    #"round": round
                                     }
                                 if network_manager.is_host:
                                     network_manager.broadcast_message(msgDescarte)
                                 else:
                                     network_manager.sendData(msgDescarte)
                     elif nombre == "Comprar carta":
-                        jugador_local.playerBuy = True
-                        # Aquí deberías tener la lógica de comprar carta
-                        if jugador_local.playerTurn:
-                            boughtCards = jugador_local.buyCard(round)
-                            for carta in boughtCards:
-                                mazo_descarte.remove(carta)
-                                deckForRound.remove(carta)
-                            jugador_local.playerTurn = False
-                            jugador_local.playerBuy = False
-                            cartas_ocultas.clear()
-                            organizar_habilitado = True
-                            visual_hand = compactar_visual_hand(visual_hand)
-                            actualizar_indices_visual_hand(visual_hand)
-                            visual_hand.clear()
-                            for idx, carta in enumerate(jugador_local.playerHand):
-                                carta.id_visual = idx
-                                visual_hand.append(carta)
+                        #CAMBIO 2
+                        card_to_show = mazo_descarte[-1] if mazo_descarte else None
+                        wants = confirm_buy_card(screen, card_to_show, WIDTH, HEIGHT, ASSETS_PATH, font)
+                        if wants:                        
+                            jugador_local.playerBuy = True
+                            # Aquí deberías tener la lógica de comprar carta
+                            if jugador_local.playerTurn:
+                                boughtCards = jugador_local.buyCard(round)
+                                for carta in boughtCards:
+                                    mazo_descarte.remove(carta)
+                                    deckForRound.remove(carta)
+                                jugador_local.playerTurn = False
+                                jugador_local.playerBuy = False
+                                cartas_ocultas.clear()
+                                organizar_habilitado = True
+                                visual_hand = compactar_visual_hand(visual_hand)
+                                actualizar_indices_visual_hand(visual_hand)
+                                visual_hand.clear()
+                                for idx, carta in enumerate(jugador_local.playerHand):
+                                    carta.id_visual = idx
+                                    visual_hand.append(carta)
 
-                            # Creo que no está la lógica para comprar la Carta... para comprar, No debe ser su turno... 
-                            msgComprarC = {
-                                "type": "COMPRAR_CARTA",
-                                #?    "cartas_descartadas": cartas_descartadas,
-                                    "playerHand": jugador_local.playerHand,
-                                    "playerId": jugador_local.playerId,
-                                    "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
-                                    "zona_cartas": zona_cartas,
-                                    "round": round
-                                }
-                            if network_manager.is_host:
-                                network_manager.broadcast_message(msgComprarC)
-                            else:
-                                network_manager.sendData(msgComprarC)
-                            
+                                # Creo que no está la lógica para comprar la Carta... para comprar, No debe ser su turno... 
+                                msgComprarC = {
+                                    "type": "COMPRAR_CARTA",
+                                    #?    "cartas_descartadas": cartas_descartadas,
+                                        "playerHand": jugador_local.playerHand,
+                                        "playerId": jugador_local.playerId,
+                                        "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
+                                        "zona_cartas": zona_cartas,
+                                        "round": round
+                                    }
+                                if network_manager.is_host:
+                                    network_manager.broadcast_message(msgComprarC)
+                                else:
+                                    network_manager.sendData(msgComprarC)
+                            else: 
+                            # El jugador eligió no comprar: no hacemos nada
+                                pass
+                    #CAMBIO 2
             
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and dragging:
                 if carta_arrastrada is not None:
@@ -2115,24 +2452,26 @@ def mostrar_cartas_eleccion(screen, cartas_eleccion):
 
 def process_received_messagesUi2():
         """Procesa los mensajes recividos de la red"""
-        if hasattr(network_manager,'received_data') and network_manager.received_data:
+        if hasattr(network_manager,'receivedData') and network_manager.receivedData:
             with network_manager.lock:
-                data = network_manager.received_data
-                network_manager.received_data = None  # Limpiar despues de procesar
+                data = network_manager.receivedData
+                network_manager.receivedData = None  # Limpiar despues de procesar
 
             print(f"Procesando mensaje recibido en Ui2.py: {data}")
             
             if network_manager.is_host:
-                #with threading.Lock:
+                with threading.Lock:
+                    receivedData = data
                 # Si es un mensaje de ESTADO (como el que contiene cartas_disponibles, elecciones, etc.) en ui2
                 if isinstance(data, dict) and data.get("type") in ["ELECTION_CARDS","SELECTION_UPDATE", "ESTADO_CARTAS", "ORDEN_COMPLETO"]:
                     network_manager.game_state.update(data)
                     print(f"Estado del juego actualizado: {network_manager.game_state}")
                 elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE"]:
-                    network_manager.moves_gameServer.append(data)
-                    print(f" Jugada del jugador recibida:{data.get("type"),network_manager.moves_game}")
+                        network_manager.moves_game.append(data)
                 # Si es otro tipo de estructura/mensaje no clasificado
                 else:
+                        # Puedes mantener el antiguo self.receivedData para mensajes no tipificados,
+                        # O agregar un sistema de colas/eventos si usas Pygame.event.
                     network_manager.incoming_messages.append(("raw", data)) # Opcional: para mensajes no clasificados
                     print(f"Mensaje guardado en incoming_messages... raw {network_manager.incoming_messages}")
 
