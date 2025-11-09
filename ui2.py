@@ -1322,7 +1322,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     players[:] = playerOrder
                     players[0].isHand = True    # El primer jugador es mano
                     player1 = None
-                if roundTwo:
+                elif roundTwo:
                     # Rotar la lista: el primero pasa al final
                     players.append(players.pop(0))
 
@@ -1332,7 +1332,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                     # El nuevo primer jugador es la nueva mano
                     players[0].isHand = True
-
                 #for p in players:
                 if players[0].playerId == host_port:
                     jugador_local = players[0]
@@ -1365,7 +1364,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 if roundOne:
                     jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                 Card("5","♥"), Card("9","♦"), Card("9","♠"), 
-                                                Card("9","♠"), Card("9","♠")]  # Solo una carta para prueba
+                                                Card("9","♠")]  # Solo una carta para prueba
                     round.hands[jugador_local.playerId] = jugador_local.playerHand
 
                 if roundTwo:
@@ -1662,7 +1661,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         if jugador_local.cardDrawn:
                             if roundOne:
                                 resultado = jugador_local.getOff(zona_cartas[0], zona_cartas[1])
-                                
                             elif roundTwo:
                                 resultado = jugador_local.getOff2(zona_cartas[0], zona_cartas[1])
                                 print(f"Resultado de getOff2 {resultado}")
