@@ -8,92 +8,93 @@ import sys
 
 class Button:
     def __init__(self, image, pos, text_input, font, base_color, hovering_color, size=(250, 100), scale_factor=1.1):
-        self.image = image         # Guarda la imagen del botón (puede ser una Surface de Pygame o None si solo es texto)
-        self.original_image = image             # Guarda la imagen del botón (puede ser una Surface de Pygame o None si solo es texto)
-        self.x_pos = pos[0]         # Coordenada X en la pantalla donde se dibujará el botón
-        self.y_pos = pos[1]         # Coordenada Y en la pantalla donde se dibujará el botón
-        self.font = font          # Fuente que se usará para dibujar el texto del botón
-        self.base_color = base_color      # Color del texto o botón cuando no hay interacción (estado normal)
-        self.hovering_color = hovering_color         # Color del texto o botón cuando el ratón está encima (hover)
-        self.text_input = text_input          # Color del texto o botón cuando el ratón está encima (hover)
-        self.base_size = size         # Color del texto o botón cuando el ratón está encima (hover)
-        self.scale_factor = scale_factor         # Factor por el cual crecerá el botón cuando el ratón esté encima (1.1 = 10% más grande)
-        self.current_size = list(size)         # Tamaño actual del botón, empieza igual al tamaño base pero cambia si hay hover
-        self.is_hovering = False         # Estado booleano que indica si el ratón está sobre el botón
-        self.text = self.font.render(self.text_input, False, self.base_color) # Renderiza el texto en una superficie con el color base, AntialisinG False
-        # Si hay imagen, escalarla al tamaño actual y obtener el rectángulo centrado
+        self.image = image
+        self.original_image = image
+        self.x_pos = pos[0]
+        self.y_pos = pos[1]
+        self.font = font
+        self.base_color = base_color
+        self.hovering_color = hovering_color
+        self.text_input = text_input
+        self.base_size = size
+        self.scale_factor = scale_factor
+        self.current_size = list(size)
+        self.is_hovering = False
+        # Render inicial del texto
+        try:
+            self.text = self.font.render(self.text_input, True, pygame.Color(self.base_color))
+        except Exception:
+            self.text = self.font.render(self.text_input, True, (255,255,255))
+        # Crear rect inicial coherente
         if self.image is not None:
             self.image = pygame.transform.scale(self.original_image, self.current_size)
             self.rect = self.image.get_rect(center=(self.x_pos, self.y_pos))
         else:
-        # Si no hay imagen, crear un rectángulo con el tamaño actual y centrarlo
             self.rect = pygame.Rect(0, 0, *self.current_size)
             self.rect.center = (self.x_pos, self.y_pos)
-        # Rectángulo del texto centrado sobre el botón
         self.text_rect = self.text.get_rect(center=(self.x_pos, self.y_pos))
 
+    def _current_rect(self):
+        """Rect calculado a partir de current_size y posición (no usa self.rect antiguo)."""
+        r = pygame.Rect(0, 0, int(self.current_size[0]), int(self.current_size[1]))
+        r.center = (int(self.x_pos), int(self.y_pos))
+        return r
+
     def update(self, screen):
-
-        # Calcular tamaño objetivo según si el cursor está sobre el botón
-
+        # Calcular tamaño objetivo según hover
         target_size = [int(self.base_size[0] * (self.scale_factor if self.is_hovering else 1)),
-                      int(self.base_size[1] * (self.scale_factor if self.is_hovering else 1))]
-        
-        # Interpolación suave del tamaño actual hacia el tamaño objetivo
-
+                       int(self.base_size[1] * (self.scale_factor if self.is_hovering else 1))]
+        # Interpolación suave
         for i in range(2):
             if abs(self.current_size[i] - target_size[i]) > 1:
                 self.current_size[i] += (target_size[i] - self.current_size[i]) * 0.2
             else:
                 self.current_size[i] = target_size[i]
-        
-        # Dibujar la imagen escalada si existe
 
-        if self.image is not None:
+        # Dibujar (imagen o rect)
+        if self.original_image is not None:
             scaled_image = pygame.transform.scale(self.original_image, [int(x) for x in self.current_size])
             scaled_rect = scaled_image.get_rect(center=(self.x_pos, self.y_pos))
             screen.blit(scaled_image, scaled_rect)
             self.rect = scaled_rect
         else:
-            # Si no hay imagen, aseguro que el rect tenga el tamaño y centro actuales
-            self.rect.size = (int(self.current_size[0]), int(self.current_size[1]))
-            self.rect.center = (self.x_pos, self.y_pos)
+            # rect basado en tamaño actual
+            self.rect = self._current_rect()
+            pygame.draw.rect(screen, (255,255,255), self.rect, border_radius=8)  # optional background
+            pygame.draw.rect(screen, (100,100,100), self.rect, 2, border_radius=8)
 
-        # Asegurar que el texto siempre se centre respecto al rect (evita que quede en la posición inicial)
+        # Recalcular y dibujar texto centrado
         self.text_rect = self.text.get_rect(center=self.rect.center)
-
-        # Dibujar siempre el texto centrado
         screen.blit(self.text, self.text_rect)
 
     def checkForInput(self, position):
-
-        # Devuelve True si la posición del mouse está dentro del rectángulo del botón
-
-        return self.rect.collidepoint(position)
+        # Usar rect actualizado para chequear colisión
+        try:
+            return self.rect.collidepoint(position)
+        except Exception:
+            return False
 
     def changeColor(self, position):
-        if self.rect.collidepoint(position):
-
-        # Si el mouse está sobre el botón, usar color de hover
-
-            self.text = self.font.render(self.text_input, True, self.hovering_color)
-        else:
-
-        # Si no está sobre el botón, usar color base
-
-            self.text = self.font.render(self.text_input, True, self.base_color)
+        # Actualiza el texto con color hover/base según colisión (sin depender de rect obsoleto)
+        try:
+            if self._current_rect().collidepoint(position):
+                self.text = self.font.render(self.text_input, True, pygame.Color(self.hovering_color))
+            else:
+                self.text = self.font.render(self.text_input, True, pygame.Color(self.base_color))
+        except Exception:
+            # fallback por si los colores no son válidos
+            if self._current_rect().collidepoint(position):
+                self.text = self.font.render(self.text_input, True, (255,255,255))
+            else:
+                self.text = self.font.render(self.text_input, True, (200,200,200))
 
     def check_hover(self, position):
-        # Guardar estado anterior de hover
-        was_hovering = self.is_hovering
-
-        # Actualizar estado actual de hover
-        self.is_hovering = self.rect.collidepoint(position)
-        
-        # Si hubo un cambio (entró o salió del hover), actualizar el color del texto
-        if was_hovering != self.is_hovering:
+        # Actualizar estado de hover basándose en rect calculado
+        was = self.is_hovering
+        self.is_hovering = self._current_rect().collidepoint(position)
+        if was != self.is_hovering:
+            # actualizar color inmediatamente al entrar/salir
             self.changeColor(position)
-
 # ===========================
 # Clase para cajas de texto (reemplazada por la versión de uiMOD)
 # ===========================
@@ -107,6 +108,7 @@ class InputBox:
         self.font = font
         self.txt_surface = font.render(text, True, pygame.Color("#000000"))
         self.active = False
+        self.clock = None  # Inicializar el reloj como None
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -119,8 +121,8 @@ class InputBox:
         if event.type == pygame.KEYDOWN:
             if self.active:
                 if event.key == pygame.K_RETURN:
-                    # Al presionar Enter, puedes decidir vaciar o mantener el texto
-                    self.text = ""
+                    # Señalar al llamador que se quiere enviar el texto (no borrar aquí)
+                    return True
                 elif event.key == pygame.K_BACKSPACE:
                     self.text = self.text[:-1]
                 else:
@@ -128,24 +130,80 @@ class InputBox:
                     self.text += event.unicode
                 # Volver a renderizar la surface del texto
                 self.txt_surface = self.font.render(self.text, True, pygame.Color("#000000"))
+        return False
 
     def update(self):
         width = max(200, self.txt_surface.get_width() + 10)
         self.rect.w = width
+        # No usar self.clock ni lógica global aquí.
+        # Sólo mantener la caja actualizada (la UI principal dibuja todo lo demás).
+        return
+        self.draw_background()
+
+        # Dibuja el título siempre, sin importar el menú
+        title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
+        self.SCREEN.blit(self.titulo_img, title_rect)
+
+        # --- ACTUALIZAR INPUT BOXES SEGÚN LA PANTALLA ---
+        if self.current_screen == "join":  
+            #self.ip_input_box.update()
+            #-----------------------------
+            self.join_player_input_box.update()  # Actualiza el nuevo input
+            #-------------------------------
+            self.join_password_input_box.update()
+        elif self.current_screen == "create":  
+            self.host_input_box.update()          
+            self.name_input_box.update()
+            self.password_input_box.update()
+            self.max_players_input_box.update()
+        elif self.current_screen == "lobby":  
+            #self.messages_input_box.update()
+            self.message_input_box.update()
+
+        # --- MANEJO DE CADA PANTALLA ---
+        if self.current_screen == "main":  
+            mouse_pos = self.draw_main_menu()
+            for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.SALIR_BUTTON]:
+                button.check_hover(mouse_pos)
+
+        elif self.current_screen == "play":  
+            mouse_pos = self.draw_play_menu()
+            for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.PLAY_BACK]:
+                button.check_hover(mouse_pos)
+
+        elif self.current_screen == "join":  
+            mouse_pos = self.draw_join_menu()
+            for button in [self.JOIN_IP_BUTTON, self.JOIN_REFREHS_BUTTON, self.JOIN_BACK_BUTTON]:
+                button.check_hover(mouse_pos)
+
+        elif self.current_screen == "create":  
+            mouse_pos = self.draw_create_menu()
+            for button in [self.CREATE_GAME_BUTTON, self.CREATE_BACK_BUTTON]:
+                button.check_hover(mouse_pos)
+        
+        elif self.current_screen == "lobby":  
+            mouse_pos = self.draw_lobby()
+            for button in [self.SEND_MS_BUTTON, self.PLAY_GAME_BUTTON, self.LOBBY_BACK_BUTTON]:
+                button.check_hover(mouse_pos)
+
+        elif self.current_screen == "play_game":  
+            mouse_pos = self.draw_play_game()
+            #for button in [self.SEND_MS_BUTTON, self.PLAY_GAME_BUTTON, self.LOBBY_BACK_BUTTON]:
+            #    button.check_hover(mouse_pos)
+
+        pygame.display.update()
+        return True
 
     def draw(self, screen):
-        # Fondo blanco con borde redondeado (alineado con estilo del proyecto)
-        pygame.draw.rect(screen, pygame.Color("#FFFFFF"), self.rect, border_radius=8)
-        pygame.draw.rect(screen, self.color, self.rect, 2, border_radius=8)
-        screen.blit(self.txt_surface, (self.rect.x + 5, self.rect.y + 5))
-
+        pygame.draw.rect(screen, pygame.Color("#FFFFFF"), self.rect, border_radius=12)
+        pygame.draw.rect(screen, self.color, self.rect, 2, border_radius=12)
+        screen.blit(self.txt_surface, (self.rect.x + 8, self.rect.y + (self.rect.h - self.txt_surface.get_height())//2))
 
 # ===========================
 # Clase que maneja la interfaz
 # ===========================
 class   UIManager:
     def __init__(self, screen_width, screen_height, network_manager):
-        
         # Dimensiones de la pantalla
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
@@ -192,7 +250,6 @@ class   UIManager:
         #------------------------------------
 
 
-
     def load_assets(self):
         assets_path = os.path.join(os.getcwd(), "assets")  # Ruta a la carpeta de assets
 
@@ -206,7 +263,11 @@ class   UIManager:
         except Exception:
             self.pixel_font = None
             print("Advertencia: No se pudo cargar la fuente pixelada. Usando fuente por defecto.")
-
+        try:
+            conectar_path = os.path.join(os.getcwd(), "assets", "conectar.png")
+            self.conectar_img = pygame.image.load(conectar_path).convert_alpha()        
+        except Exception:
+            self.conectar_img = None
         # Guardar las imágenes originales para poder re-escalarlas al cambiar el tamaño de la ventana
         self.titulo_img_original = pygame.image.load(os.path.join(assets_path, "titulo.png")).convert_alpha()
         self.fondo_img_original = pygame.image.load(os.path.join(assets_path, "fondo.png")).convert()
@@ -327,15 +388,17 @@ class   UIManager:
         # Fuente pequeña para botones secundarios
         small_font = self.get_font(30)
 
-        # Botón "Unirse por IP"-> Conectar
+        # Botón para conectar por IP en el menú Join (usar PNG si lo cargaste)
+        join_btn_size = getattr(self, "crear_partida_img_scaled", None).get_size() if hasattr(self, "crear_partida_img_scaled") else (120, 40)
+        join_img = getattr(self, "conectar_img", None)
         self.JOIN_IP_BUTTON = Button(
-            image=None,
-            pos=(self.SCREEN_WIDTH//2, 490),
-            text_input="Conectar",
-            font=small_font,
+            image=join_img,
+            pos=(self.SCREEN_WIDTH//2 + 180, self.SCREEN_HEIGHT//2),  # ajustar coordenadas
+            text_input="",
+            font=self.get_font(20),
             base_color="#d7fcd4",
             hovering_color="White",
-            size=(200, 50)
+            size=join_btn_size
         )
 
         # Botón "VOLVER" en menú de unirse
@@ -360,15 +423,21 @@ class   UIManager:
 
         # Botón "Crear Partida"
         font_btn = self.get_font(22)
+        crear_size = self.crear_partida_img_scaled.get_size() if hasattr(self, "crear_partida_img_scaled") else (160, 44)
+        # Crear el Button usando la imagen original para que Button.update la escale y haga hover
         self.CREATE_GAME_BUTTON = Button(
-            image=None,
-            pos=(0, 0),  # Se posiciona en draw_create_menu
-            text_input="Crear partida",
+            image=self.crear_partida_img,   # Button internamente escalará esta imagen
+            pos=(self.SCREEN_WIDTH//2, self.SCREEN_HEIGHT//2),
+            text_input="",                  # botón con imagen, sin texto
             font=font_btn,
             base_color="#2ecc71",
             hovering_color="#4cd964",
-            size=(160, 44)
+            size=crear_size,
+            scale_factor=1.12
         )
+        # Inicializar rect y estado coherente
+        self.CREATE_GAME_BUTTON.current_size = list(crear_size)
+        self.CREATE_GAME_BUTTON.base_size = crear_size
 
         # Botón "VOLVER" en menú de crear partida
         self.CREATE_BACK_BUTTON = Button(
@@ -427,12 +496,12 @@ class   UIManager:
         self.init_input_boxes()
 
     def init_input_boxes(self):
-        smaller_font = self.get_font(20)
+        smaller_font = self.get_font(33)
         self.text_color = pygame.Color("#d7fcd4")
         self.messages_text = smaller_font.render("Chat:", True, self.text_color)
         self.message_text = smaller_font.render("Mensaje:", True, self.text_color)
         self.label_font = smaller_font
-        font = self.get_font(24)
+        font = self.get_font(38)
         self.host_input_box = InputBox(0, 0, 300, 40, font, text="")
         self.name_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.password_input_box = InputBox(0, 0, 300, 40, smaller_font)
@@ -523,9 +592,8 @@ class   UIManager:
         label_x = base_x
         input_x = base_x + label_w + gap
 
-        # Dibuja el rectángulo para el campo de Nombre de la sala (ajustado al bloque centrado)
-        rectNameServer = pygame.Rect(input_x, box_y + 35, input_w - 60, 48)
-        # detectar hover
+        # Dibuja el rectángulo para el campo de Nombre de la sala (menos ancho y más delgado)
+        rectNameServer = pygame.Rect(input_x, box_y + 43, input_w - 160, 36)
         self.is_hovered = rectNameServer.collidepoint(MENU_MOUSE_POS)
 
         # Estado visual: seleccionado > hover > predeterminado (blanco)
@@ -540,19 +608,22 @@ class   UIManager:
             fill_color = (255, 255, 255)    # FONDO PREDETERMINADO BLANCO
 
         # dibujar fondo y borde
-        pygame.draw.rect(self.SCREEN, fill_color, rectNameServer)
-        pygame.draw.rect(self.SCREEN, border_color, rectNameServer, 2)
+        # dibujar fondo y borde con esquinas ovaladas
+        pygame.draw.rect(self.SCREEN, fill_color, rectNameServer, border_radius=12)
+        pygame.draw.rect(self.SCREEN, border_color, rectNameServer, 2, border_radius=12)
 
         # Información del servidor (centrada sobre los inputs)
         if self.servers:
             server_text = smaller_font.render(f"{self.servers[0]['name']}: Jugadores {self.servers[0]['currentPlayers']}/{self.servers[0]['max_players']}", True, (0, 0, 0))
-            server_rect = server_text.get_rect(center=(self.SCREEN_WIDTH // 2, box_y + 50))
+            server_rect = server_text.get_rect(center=rectNameServer.center)
+            server_rect.y += 0  # bajar un poco para quedar centrado-bajo dentro del input
             self.SCREEN.blit(server_text, server_rect)     
         else:
             noServers = smaller_font.render("No hay Salas :( ", True, (0,0,0))
-            noServers_rect = noServers.get_rect(center=(self.SCREEN_WIDTH // 2, box_y + 50))
+            noServers_rect = noServers.get_rect(center=rectNameServer.center)
+            noServers_rect.y += 0
             self.SCREEN.blit(noServers, noServers_rect)
-        
+
         if self.response == "No ha seleccionado un servidor":
             ####noSelectServer = smaller_font.render("No ha seleccionado un servidor", True, (0,0,0))
             ####self.SCREEN.blit(noSelectServer, (input_req_x + 100, box_y + 70)) 
@@ -611,31 +682,43 @@ class   UIManager:
         self.join_password_input_box.rect.size = (input_w, 40)
 
         # Mantener la posición del botón de conectar centrada respecto al bloque (sin cambiar lógica)
-        self.JOIN_IP_BUTTON.check_hover(MENU_MOUSE_POS)
-        self.JOIN_IP_BUTTON.update(self.SCREEN)
-        self.JOIN_IP_BUTTON.rect.center = (self.SCREEN_WIDTH//2, box_y + 200)
-    
-        # Botón actualizar y volver (mantener sus posiciones relativas, sólo dibujados)
+        if hasattr(self, "JOIN_IP_BUTTON") and self.JOIN_IP_BUTTON:
+            # Colocar el botón justo debajo del campo de contraseña
+            gap = 12  # separación entre fondo del input de contraseña y la parte superior del botón
+            btn_w, btn_h = self.JOIN_IP_BUTTON.rect.size
+            # el input de contraseña se coloca en box_y + 140 con altura 40 (ver código más arriba)
+            pwd_top = box_y + 140
+            pwd_h = 40
+            btn_x = rectNameServer.centerx
+            btn_y = pwd_top + pwd_h + gap + btn_h // 2
+            self.JOIN_IP_BUTTON.rect.center = (btn_x - 30, btn_y)
+            # mantener x_pos/y_pos usados por la lógica de dibujo si existen
+            try:
+                self.JOIN_IP_BUTTON.x_pos, self.JOIN_IP_BUTTON.y_pos = self.JOIN_IP_BUTTON.rect.center
+            except Exception:
+                pass
+            self.JOIN_IP_BUTTON.check_hover(MENU_MOUSE_POS)
+            self.JOIN_IP_BUTTON.update(self.SCREEN)
+       # Botón actualizar y volver (mantener sus posiciones relativas, sólo dibujados)
         self.JOIN_REFREHS_BUTTON.check_hover(MENU_MOUSE_POS)
         self.JOIN_REFREHS_BUTTON.update(self.SCREEN)
 
         # Botón volver
         self.JOIN_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.JOIN_BACK_BUTTON.update(self.SCREEN)
-    
-        return MENU_MOUSE_POS
 
+        return MENU_MOUSE_POS
     def draw_create_menu(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        box_width = 600
+        box_width = 700
         box_height = 400
-        box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + 40
+        box_x = (self.SCREEN_WIDTH // 2 - box_width // 2)
+        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 
     
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(cuadro_surf, (box_x, box_y))
     
-            # Inputs y labels alineados y centrados
+        # Inputs y labels alineados y centrados
         campos = [
             ("Nombre de la Sala:", self.host_input_box),
             ("Nombre del Jugador:", self.name_input_box),
@@ -643,16 +726,18 @@ class   UIManager:
             ("Cantidad de Jugadores:", self.max_players_input_box)
         ]
         total_inputs = len(campos)
-        input_w, input_h = 300, 40
+        input_w, input_h = 250, 40
         label_gap = 10
         vertical_gap = 10
         total_height = total_inputs * input_h + (total_inputs - 1) * vertical_gap
         start_y = box_y + (box_height - total_height) // 2
-    
-        for idx, (label_text, input_box) in enumerate(campos):
-            input_x = box_x + (box_width - input_w) // 2 + 80
+        
+        # Usar una fuente local más grande solo para las etiquetas de "Crear sala"
+        create_label_font = self.get_font(27)  
+        for idx, (label_text, input_box) in enumerate(campos):            
+            input_x = box_x + (box_width - input_w) // 2 + 90
             input_y = start_y + idx * (input_h + vertical_gap)-35
-            label_surf = self.label_font.render(label_text, True, self.text_color)
+            label_surf = create_label_font.render(label_text, True, self.text_color)
             label_rect = label_surf.get_rect()
             label_rect.centery = input_y + input_h // 2
             label_rect.right = input_x - label_gap
@@ -660,30 +745,36 @@ class   UIManager:
             input_box.rect.size = (input_w, input_h)
             self.SCREEN.blit(label_surf, label_rect)
             input_box.draw(self.SCREEN)
-    
-            # Botón "Crear partida" PNG
+
+        # Botón "Crear partida" (debajo de los inputs)
         btn_x = box_x + box_width // 2
-        btn_y = box_y // 2 + box_height
-        self.crear_partida_img_rect.center = (btn_x, btn_y)
-        mouse_pos = pygame.mouse.get_pos()
-        if self.crear_partida_img_rect.collidepoint(mouse_pos):
-            img_hover = pygame.transform.scale(self.crear_partida_img, (130, 44))
-            img_rect_hover = img_hover.get_rect(center=(btn_x, btn_y))
-            self.SCREEN.blit(img_hover, img_rect_hover.topleft)
-            self.crear_partida_img_rect = img_rect_hover
-        else:
-            self.SCREEN.blit(self.crear_partida_img_scaled, self.crear_partida_img_rect.topleft)
-    
+        btn_y = start_y + total_height + 20  # Ajustar posición debajo de los inputs
+        self.CREATE_GAME_BUTTON.x_pos, self.CREATE_GAME_BUTTON.y_pos = btn_x, btn_y
+        try:
+            self.CREATE_GAME_BUTTON.rect.center = (btn_x, btn_y)
+        except Exception:
+            pass
+        self.CREATE_GAME_BUTTON.check_hover(MENU_MOUSE_POS)
+        self.CREATE_GAME_BUTTON.update(self.SCREEN)
+
+        # Botón "Volver" (debajo del cuadro de creación de sala)
+        back_x = box_x + box_width // 2
+        back_y = box_y + box_height + 20  # Ajustar posición debajo del cuadro
+        self.CREATE_BACK_BUTTON.x_pos, self.CREATE_BACK_BUTTON.y_pos = back_x, back_y
+        try:
+            self.CREATE_BACK_BUTTON.rect.center = (back_x, back_y)
+        except Exception:
+            pass
         self.CREATE_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.CREATE_BACK_BUTTON.update(self.SCREEN)
-        return MENU_MOUSE_POS
 
+        return MENU_MOUSE_POS
     def draw_lobby(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
         smaller_font = self.get_font(20)  # Fuente para textos
 
         # Tamaño y posición del recuadro (centrado)
-        box_width = 700
+        box_width = 750
         box_height = 350
         box_x = (self.SCREEN_WIDTH - box_width) // 2
         box_y = (self.SCREEN_HEIGHT - box_height) // 2 + 20
@@ -691,19 +782,20 @@ class   UIManager:
         # Dibujar fondo del recuadro
         lobby_h = box_height + 80
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, lobby_h))
-        self.SCREEN.blit(cuadro_surf, (box_x, box_y - 20))
+        self.SCREEN.blit(cuadro_surf, (box_x - 30, box_y - 20))
 
         # Área de chat (centrada en el recuadro)
         padding = 24
         inner_w = box_width - padding * 2
-        chat_w = int(inner_w * 0.56)
+        chat_w = int(inner_w * 0.45)
         chat_h = 120
 
         # Desplazamiento extra para bajar chat e inputs un poco más abajo del cuadro
         extra_offset = 30
         chat_rect = pygame.Rect(box_x + (box_width - chat_w) // 2, box_y + 52 + extra_offset, chat_w, chat_h)
-        pygame.draw.rect(self.SCREEN, (255, 255, 255), chat_rect)       
-        pygame.draw.rect(self.SCREEN, (180, 180, 180), chat_rect, 2) 
+        # Chat con esquinas ovaladas
+        pygame.draw.rect(self.SCREEN, (255, 255, 255), chat_rect, border_radius=12)       
+        pygame.draw.rect(self.SCREEN, (180, 180, 180), chat_rect, 2, border_radius=12) 
         # Mostrar últimos mensajes dentro del chat
         y_offset = chat_rect.y + 8
         with self.chatLock:
@@ -726,7 +818,8 @@ class   UIManager:
             server_text = f"Conectado a: {self.selectedServer.get('name','')}  Jugadores: {self.selectedServer.get('currentPlayers',0)}/{self.selectedServer.get('max_players',0)}"
         else:
             server_text = "Lobby"
-        server_surf = smaller_font.render(server_text, True, "#d7fcd4")
+        server_font = self.get_font(28)  
+        server_surf = server_font.render(server_text, True, "#d7fcd4")
         # midbottom de server_surf justo 6px encima del top del chat_rect
         server_rect = server_surf.get_rect(midbottom=(chat_rect.centerx, chat_rect.top - 6))
         self.SCREEN.blit(server_surf, server_rect)
@@ -734,7 +827,7 @@ class   UIManager:
 
         # Caja para escribir mensaje (debajo del chat, centrada)
         row_h = 44
-        input_w = min(360, inner_w - 40)
+        input_w = min(360, inner_w - 40) - 80  # dejar espacio para el botón enviar
         msg_box_x = chat_rect.x
         msg_box_y = chat_rect.bottom + 18  # ya queda más abajo por extra_offset
         self.message_input_box.rect.topleft = (msg_box_x, msg_box_y)
@@ -809,8 +902,8 @@ Mazo: 52 cartas + 1 Joker.
 Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
 Cómo perder: El primer jugador en alcanzar o superar los 500 puntos es eliminado.
 Combinaciones:
-• Trío: Tres cartas del mismo valor (ej: Q♥, Q♦, Q♠).
-• Seguidilla: Cuatro cartas consecutivas del mismo palo (ej: ♣7, ♣8, ♣9, ♣10).
+• Trío: Tres cartas del mismo valor (ej: QC, QD, QP).
+• Seguidilla: Cuatro cartas consecutivas del mismo palo (ej: 7T, 8T, 9T, 10T).
 
 Rondas de Juego:
 1. Trío y Seguidilla
@@ -826,7 +919,10 @@ Puntuación:
 
 Desarrollo del Juego:
 1. Inicio: Cada jugador recibe 10 cartas. Se coloca una carta boca arriba del mazo en el centro de la mesa para iniciar el descarte. Se designa un jugador como MANO.
+
 2. Turno del MANO: Para la siguiente ronda, el rol de MANO pasa al jugador a la izquierda del MANO actual.
+
+
 3. Primera Toma de la Carta Central: Solo el jugador MANO tiene la primera oportunidad de tomar la carta boca arriba del centro. Si decide tomarla, debe descartar una carta de su mano para mantener un total de 10 cartas. Si el MANO no toma la carta central, se pasa a la siguiente fase de toma.
 4. Segunda Oportunidad de Toma de la Carta Central: Si el MANO no tomó la carta central, los demás jugadores, en orden hacia la izquierda del MANO, tienen la oportunidad de tomarla. El primer jugador que la tome debe robar una carta adicional del mazo como penalización, quedando con 12 cartas. Si nadie toma la carta central en esta segunda oportunidad, la carta se QUEMA y se descarta, quedando fuera de juego.
 5. Turno Regular del Jugador: Después de la fase de toma de la carta central (haya sido tomada o quemada), y durante el resto de su turno, cada jugador puede realizar una de las siguientes acciones:
@@ -838,10 +934,11 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 7. Puntuación de la Ronda: Los jugadores que no lograron bajarse suman los puntos de las cartas que aún tienen en su mano.
 8. Fin de la Partida: El juego continúa a lo largo de las cuatro rondas. El ganador es el jugador con la menor puntuación total al final de las cuatro rondas, o el último jugador que no haya alcanzado o superado los 500 puntos."""
         # crear la caja de reglas dentro de Options (usa la clase anidada)
-        box_w, box_h = 760, 400
+        box_w, box_h = 600 , 300
         box_x = self.SCREEN_WIDTH // 2 - box_w // 2
         box_y = 140
-        rules_box = self.RulesTextBox(box_x + 20, box_y + 20, box_w - 40, box_h - 40, self.get_font(18), game_rules)
+
+        rules_box = self.RulesTextBox(box_x + 20, box_y + 20, box_w - 40, box_h - 40, self.get_font(30), game_rules)
 
         # Crear botón VOLVER una sola vez y posicionarlo dentro del contenedor
         options_back = Button(
@@ -884,8 +981,8 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             # Contenedor centrado (fondo oscuro)
             #self.SCREEN.fill((50, 50, 50), (self.SCREEN_WIDTH//2 - box_w//2, box_y, box_w, box_h))
             # Dibujar contenedor usando cuadro.png escalado en vez de rect gris
-            cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_w, box_h))
-            self.SCREEN.blit(cuadro_surf, (self.SCREEN_WIDTH//2 - box_w//2, box_y))
+            cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_w + 100, box_h + 100))
+            self.SCREEN.blit(cuadro_surf, (self.SCREEN_WIDTH//2 - box_w//2 - 60, box_y - 50))
 
             # Título
             options_text = self.get_font(45).render("Reglas de Rummy 500", True, "White")
@@ -931,14 +1028,18 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 mouse_pos = pygame.mouse.get_pos()
                 if self.current_screen == "create":
                     if self.crear_partida_img_rect.collidepoint(mouse_pos):
-                        nombre_sala = self.host_input_box.text
-                        nombre = self.name_input_box.text
+                        nameSala = self.host_input_box.text
+                        nameHost = self.name_input_box.text
                         password = self.password_input_box.text
+                        if nameHost == "":
+                            nameHost = "Host"
+                        if nameSala == "":
+                            nameSala= "Sala1"
                         try:
                             max_players = int(self.max_players_input_box.text)
                         except:
                             max_players = 7
-                        exito = self.network_manager.start_server(nombre, password, max_players,nombre_sala)
+                        exito = self.network_manager.start_server(nameHost, password, max_players,nameSala)
                         print("Servidor creado" if exito else "Error al crear servidor")
                         self.current_screen = "lobby"
             if event.type == pygame.MOUSEBUTTONDOWN:  # Si se hace clic con el mouse
@@ -1018,15 +1119,19 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     if self.CREATE_BACK_BUTTON.checkForInput(event.pos):  # Botón "volver"
                         self.current_screen = "play"  # Regresa al menú de jugar
                     elif self.CREATE_GAME_BUTTON.checkForInput(event.pos):  # Botón "crear partida"
-                        nombre_sala = self.host_input_box.text  # Nombre de la sala
-                        nombre = self.name_input_box.text  # Nombre de la partida
+                        nameSala= self.host_input_box.text  # Nombre de la sala
+                        nameHost = self.name_input_box.text  # Nombre de la partida
+                        if nameHost == "":
+                            nameHost = "Host"
+                        if nameSala == "":
+                            nameSala= "Sala1"
                         password = self.password_input_box.text  # Contraseña
                         try:
                             max_players = int(self.max_players_input_box.text)  # Convierte jugadores a número
                         except:  # Si no se escribe un número válido
                             max_players = 7  # Valor por defecto
                         # Intenta crear el servidor
-                        exito = self.network_manager.start_server(nombre, password, max_players,nombre_sala)
+                        exito = self.network_manager.start_server(nameHost, password, max_players,nameSala)
                         print("Servidor creado" if exito else "Error al crear servidor")
                         print(self.network_manager.host,self.network_manager.gameName)
                         self.current_screen = "lobby"  # Cambia a la pantalla lobby
@@ -1068,7 +1173,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         if msg:
                             # Enviando mensajes del servidor/jugador
                             if self.network_manager.server:
-                                formattedMsg = f"Host: {msg}"
+                                formattedMsg = f"Host: {msg}" 
                                 with self.chatLock:
                                     self.network_manager.messagesServer.append(formattedMsg)
                                     print(f"en la lista de mensajes: {self.messages}")
@@ -1100,8 +1205,32 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 self.password_input_box.handle_event(event)  # Campo de contraseña
                 self.max_players_input_box.handle_event(event)  # Campo de jugadores
             elif self.current_screen == "lobby":
-                self.message_input_box.handle_event(event)  # Mensaje
-
+                # Pasar el evento al input y, si es ENTER mientras está activo, enviar mensaje
+                self.message_input_box.handle_event(event)
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and getattr(self.message_input_box, "active", False):
+                    msg = self.message_input_box.text.strip()
+                    if msg:
+                        if getattr(self.network_manager, "server", False):
+                            formattedMsg = f"Host: {msg}"
+                            with self.chatLock:
+                                self.network_manager.messagesServer.append(formattedMsg)
+                        try:
+                            self.network_manager.broadcast_message(formattedMsg)
+                        except Exception:
+                            pass
+                        if getattr(self.network_manager, "player", False):
+                            try:
+                                success = self.network_manager.sendData(("chat_messages", msg))
+                            except Exception:
+                                success = False
+                            if success:
+                                formattedMsg = f"Tú: {msg}"
+                                with self.chatLock:
+                                    self.network_manager.messagesServer.append(formattedMsg)
+                        # limpiar input
+                        self.message_input_box.text = ""
+                        self.message_input_box.txt_surface = self.get_font(20).render("", True, (0,0,0))
+                        print(f" Mensajes: {self.messages}")
         self.process_received_messages()
         return True  # Si nada fuerza salida, el loop sigue
     
@@ -1201,4 +1330,73 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
         pygame.display.update()
         return True
+
+    class RulesTextBox:
+        def __init__(self, x, y, w, h, font, text):
+            self.rect = pygame.Rect(x, y, w, h)
+            self.font = font  # fuente más grande pasada desde options()
+            self.text = text
+            self.lines = []
+            self._wrap_lines()
+            self.scroll_offset = 0
+            # Interlineado ligeramente mayor para mejorar lectura
+            self.line_height = int(self.font.get_height() * 1.35)
+
+        def _wrap_lines(self):
+            # Romper en párrafos para insertar líneas vacías entre párrafos
+            paragraphs = self.text.split("\n\n")
+            wrapped = []
+            max_width = self.rect.w - 20
+            for para in paragraphs:
+                words = para.split()
+                if not words:
+                    wrapped.append("")  # párrafo vacío
+                    continue
+                line = words[0]
+                for word in words[1:]:
+                    test_line = f"{line} {word}"
+                    if self.font.size(test_line)[0] > max_width:
+                        wrapped.append(line)
+                        line = word
+                    else:
+                        line = test_line
+                if line:
+                    wrapped.append(line)
+                # línea en blanco como separador de párrafos
+                wrapped.append("")
+            # eliminar último separador si existe
+            if wrapped and wrapped[-1] == "":
+                wrapped.pop()
+            self.lines = wrapped
+
+        def update(self, events):
+            for event in events:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if self.rect.collidepoint(event.pos):
+                        if event.button == 4:  # Scroll up
+                            self.scroll_offset = max(self.scroll_offset - self.line_height, 0)
+                        elif event.button == 5:  # Scroll down
+                            max_offset = max(0, len(self.lines) * self.line_height - self.rect.h + 20)
+                            self.scroll_offset = min(self.scroll_offset + self.line_height, max_offset)
+
+        def draw(self, screen):
+            # Dibujar borde del contenedor
+            pygame.draw.rect(screen, (150, 150, 150), self.rect, 2, border_radius=12)
+            # Clip para asegurar que el texto no salga del recuadro
+            clip_rect = screen.get_clip()
+            screen.set_clip(self.rect)
+            y = self.rect.y + 10 - self.scroll_offset
+            for line in self.lines:
+                # Dibujar líneas vacías como espacio extra
+                if line == "":
+                    y += int(self.line_height * 0.6)
+                else:
+                    rendered = self.font.render(line, True, (255, 255, 255))
+                    if y + rendered.get_height() > self.rect.y and y < self.rect.y + self.rect.h:
+                        screen.blit(rendered, (self.rect.x + 10, y))
+                    y += self.line_height
+                # Si ya pasó el área visible, puede romper antes (ligera optimización)
+                if y > self.rect.y + self.rect.h + self.line_height:
+                    break
+            screen.set_clip(clip_rect)
 

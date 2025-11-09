@@ -86,7 +86,7 @@ class Player:
     def discardCard(self, selectedDiscards, round):
 
         #Verificamos la cantidad de cartas seleccionadas.
-        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn:
+        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn and self.downHand:
 
             #Si seleccionaron dos y la primera es un Joker, se retorna una lista con ambas cartas.
             if selectedDiscards[0].joker:
@@ -184,6 +184,39 @@ class Player:
         #de tal manera que la combinación de cartas que va a bajar coincida con alguna de las combinaciones
         #que retorna este método canGetOff().
 
+    def canGetOff2(self): #Por favor, no modificar.
+        #Hay algunas cosas que aquí dicen "trio" y eso, pero deben dejarse así, para que siga funcio-
+        #nando el insertCard independientemente de la ronda.
+        straights = self.findStraight()
+        jokers = [c for c in self.playerHand if c.joker]
+
+        valid_combos = []
+
+        # Probar cada combinación de 2 seguidillas
+        for straight1 in straights:
+            for straight2 in straights:
+                jokersInStraights = sum(1 for c in straight1 if c.joker) + sum(1 for c in straight2 if c.joker)
+                usedJokers = jokersInStraights
+                # Verificamos que no compartan cartas (verificando si tienen la misma instancia)
+                conflict = any(c1.id == c2.id for c1 in straight1 for c2 in straight2 if not c1.joker and not c2.joker)
+                conflict2 = usedJokers > len(jokers) #El segundo conflicto es para evitar que se dupliquen jokers en las jugadas
+                if not conflict and not conflict2 and len(straight1) >= 4 and len(straight2) >= 4: #Esto nos filtra las combinaciones en las que hay conflictos y en las que haya seguidillas de 3 o menos cartas
+                    valid_combos.append({
+                        "trio": straight1,
+                        "straight": straight2
+                    })
+
+        if valid_combos:
+            print(f"\n✅ El jugador {self.playerName} SI SE PUEDE BAJAR con {len(valid_combos)} combinación(es):")
+            for i, combination in enumerate(valid_combos, 1): #Simplemente nos imprime en pantalla las combinaciones disponibles en la mano del jugador
+                print(f"   Opción {i}:")
+                print(f"     Seguidilla 1 -> {[str(c) for c in combination["trio"]]}")
+                print(f"     Seguidilla 2 -> {[str(c) for c in combination["straight"]]}")
+            return valid_combos
+        else:
+            print(f"\n❌ El jugador {self.playerName} NO se puede bajar aún.")
+            return None
+
     def getOff(self, visualStraight, visualTrio):
         """Con este método, el jugador podrá bajarse.
         Tengamos en cuenta que:
@@ -263,6 +296,82 @@ class Player:
 
         #Por último, si la jugada tiene menos de 7 cartas, claramente el jugador no puede bajarse
         elif len(chosenCards) < 7:
+            print(f"Se han seleccionado {len(chosenCards)} cartas, no son suficientes aún.")
+            return None
+
+    def getOff2(self, visualStraight, visualStraight2):
+        #Por favor, tampoco lo modifiquen xd
+        """Con este método, el jugador podrá bajarse (en la segunda ronda).
+        Tengamos en cuenta que:
+        +visualStraight2 corresponde a las cartas colocadas en la "zona de tríos" de la interfaz
+        +visualStraight corresponde, por su parte, a las cartas de la "zona de seguidillas" dentro de la interfaz"""
+        combinations = self.canGetOff2()
+        prepareStraight1 = []
+        #availableStraights1 = [combination["trio"] for combination in combinations] if combinations != None else [] #Nos crea una lista con todas las combinaciones de seguidillas válidas disponibles
+        availableStraights1 = [combination["straight"] for combination in combinations] if combinations != None else [] #Nos crea una lista con todas las combinaciones de seguidillas válidas disponibles
+        availableStraights2 = [combination["straight"] for combination in combinations] if combinations != None else [] #Nos crea una lista con todas las combinaciones de seguidillas válidas disponibles
+        prepareStraight2 = []
+        chosenCards = visualStraight2 + visualStraight #Esta lista contendrá las cartas que el jugador ha seleccionado para bajarse
+        if not chosenCards:
+            print("El jugador aún no ha seleccionado cartas")
+            return None
+        if len(chosenCards) >= 8:   # Dos sguidillas tienen minimo 8 cartas...
+            for straight1 in availableStraights1: #Esto nos crea una lista con todas las cartas que se van a descartar
+                for straight2 in availableStraights2:
+                    for card in chosenCards:
+                        #Agregamos cartas al posible trío y seguidilla dependiendo de si 
+                        #están en la mano del jugador y si coinciden con alguna carta del trío o seguidilla válidos
+                        if card in straight2 and card in self.playerHand and card not in prepareStraight2 and card in visualStraight2:
+                            prepareStraight2.append(card)
+                        elif card in straight1 and card in self.playerHand and card not in prepareStraight1 and card in visualStraight:
+                            prepareStraight1.append(card)
+            #Si existe alguna carta en el trío o en la seguidilla que no estén dentro de alguna jugada válida
+            if any(card not in prepareStraight2 and card not in prepareStraight1 for card in chosenCards):
+                print("Alguna de las cartas seleccionadas no se encuentra en alguna de las seguidillas armadas")
+                return None
+            #Si el jugador ya se bajó, no le permitimos que lo vuelva a hacer
+            elif self.downHand:
+                print("El jugador ya se bajó en esta ronda. No puede volver a bajarse")
+                return None
+            #Si la seguidilla armada no coincide con el orden de alguna seguidilla válida, no se puede bajar
+            elif not any(straight == visualStraight for straight in availableStraights1):
+                print("La seguidilla organizada (1) no coincide con alguna seguidilla válida")
+                return None
+            #Si la segunda seguidilla armada no coincide con el orden de alguna seguidilla válida, no se puede bajar
+            elif not any(straight == visualStraight2 for straight in availableStraights2):
+                print("La seguidilla organizada (2) no coincide con alguna seguidilla válida")
+                return None
+            elif not self.isHand:
+                print("El jugador no puede bajarse aún porque no es su turno")
+                return None
+            elif not self.cardDrawn:
+                print("El jugador debe tomar una carta antes de hacer cualquier jugada")
+                return None
+            else:
+                #Analizamos, si ambas seguidillas tienen al menos 4 cartas c/u,
+                #Y a la vez se han seleccionado al menos 8 cartas entre estas, el jugador
+                #SI Se podrá bajar
+                if len(prepareStraight2) >= 4 and len(prepareStraight1) >= 4 and len(chosenCards) >= 8 and self.isHand:
+                    #La jugada se guardará en playMade.
+                    self.playMade.append({"straight2": prepareStraight2, "straight": prepareStraight1})
+                    #self.playMade.append(prepareStraight1)
+                    #self.playMade.append(prepareStraight2)
+                    #Eliminamos las cartas de los espacios visuales, para que desaparezcan al pulsar el botón de bajarse
+                    for card in prepareStraight2:
+                        visualStraight2.remove(card)
+                        self.playerHand.remove(card)
+                    for card in prepareStraight1:
+                        visualStraight.remove(card)
+                        self.playerHand.remove(card)
+                    #El booleano que indica si se bajó, cambia a True
+                    self.downHand = True
+                    print(f"El jugador {self.playerName} se bajó con: \n     Seguidilla 1 -> {[str(c) for c in prepareStraight1]}\n     Seguidilla 2 -> {[str(c) for c in prepareStraight2]}")
+                    print(f"Straight1 guardado: {[str(c) for c in prepareStraight1]}")
+                    print(f"Straight2 guardada: {[str(c) for c in prepareStraight2]}")
+                    return prepareStraight1, prepareStraight2
+
+        #Por último, si la jugada tiene menos de 8 cartas, claramente el jugador no puede bajarse
+        elif len(chosenCards) < 8:
             print(f"Se han seleccionado {len(chosenCards)} cartas, no son suficientes aún.")
             return None
 

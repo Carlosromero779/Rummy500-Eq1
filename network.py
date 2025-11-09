@@ -56,7 +56,7 @@ class NetworkManager:
             return "127.0.0.1" #Local IP
         
 
-    def start_server(self, gameName, password, max_players,nombre_sala):
+    def start_server(self, gameName, password, max_players,name_sala):
         self.host = self.getLocalIP() #Obteniendo IP del Creador (SERVIDOR)
         """Inicia el servidor del juego"""
         try:
@@ -64,7 +64,7 @@ class NetworkManager:
             self.server.bind((self.host, self.port))
             self.server.listen(max_players)
             
-            self.gameName = nombre_sala
+            self.gameName = name_sala
             self.playerName = gameName   #Falta input_box 
             playerName = ""
             self.password = password
@@ -385,7 +385,6 @@ class NetworkManager:
    
                     elif isinstance(received_data, dict) and received_data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE"]:
                         self.moves_game.append(received_data)
-                        print(f" Jugada del jugador recibida:{received_data.get("type"),self.moves_game}")
                     # Si es otro tipo de estructura/mensaje no clasificado
                     else:
                         # Puedes mantener el antiguo self.receivedData para mensajes no tipificados,
