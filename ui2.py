@@ -1348,7 +1348,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     p.playMade = []
                     p.playerHand = []
                     p.downHand = False
-                
+                    p.cardDrawn = False
                 # Inicializacion del mazo...
                 round = startRound(players, screen)[0]
                 print(f"deck para la ronda: {[c for c in round.pile]}")
@@ -2493,6 +2493,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     screen.blit(img, img_rect.topleft)
             cuadros_interactivos[texto] = rect
             x += w + margin
+        cuadros_interactivos["Trio"] = pygame.Rect(x_trio, cuadro_y, cuadro_w_carta, cuadro_h)
+        cuadros_interactivos["Seguidilla"] = pygame.Rect(x_seguidilla, cuadro_y, cuadro_w_carta, cuadro_h)
+        cuadros_interactivos["Descarte"] = pygame.Rect(x_descarte, cuadro_y, cuadro_w_carta, cuadro_h)
 
         # --- Caja superior izquierda: Ronda y Turno (pegada arriba a la izquierda) ---
         ronda_turno_x = 0
