@@ -1237,6 +1237,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
     #contJugador = 0
     #contHost = 0
 
+    # Variables para manejar el ciclo de compra. 
+    noBuy = True        # Indica que no hay compras activas.
+    bought = False      # Indica que ya hubo ciclo de compras en el turno actual.
+    waiting = False     # Indica que el MANO esta esperando alguna decision de compra.
+    time_waiting = None # Variable para manejar el tiempo de espera.
+
     while running:
         # --- SOLO FASE DE ELECCIÓN ---
         if fase == "eleccion":
@@ -1266,7 +1272,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             mazo_descarte = msg[1].get("mazo_descarte")
                             hands = msg[1].get("hands")
                             round = msg[1].get("round")
-
                             received_round = msg[1].get("round")
                             
                             if received_round:
@@ -1441,6 +1446,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 mazo_de_descarte = msg.get("mazo_descarte")
                 round = msg.get("round")
                 
+                bought = True
+
                 print(f"Mensaje de TOMAR DESCARTE recibido del Player ID: {player_id_que_tomoD}")
                 for p in players:
                     if p.playerId == player_id_que_tomoD:
@@ -1456,13 +1463,62 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 mazoBocaAbajo = msg.get("mazo")
                 round = msg.get("round")
                 
+                # bought = True
+
                 print(f"Mensaje de TOMAR CARTA recibido del Player ID: {player_id_que_tomoC}")
                 for p in players:
                     if p.playerId == player_id_que_tomoC:
                         p.playerHand = mano_restante
+                        p.playerPass = False
                         #pass
                 cardTaken = carta_tomada
                 deckForRound = mazoBocaAbajo #round.pile
+
+            elif isinstance(msg,dict) and msg.get("type")=="PASAR_DESCARTE":
+                player_id_que_pasoD = msg.get("playerId")
+                player_name_que_pasoD = msg.get("playerName")
+
+                waiting = True
+                time_waiting = time.time()
+                print(f"Waiting y time_waiting: ({waiting}, {time_waiting})")
+                
+                print(f"Mensaje de PASAR DESCARTE recibido del Player ID: {player_id_que_pasoD}")
+                for p in players:
+                    if p.playerId == player_id_que_pasoD:
+                        p.playerPass = True
+
+                if not jugador_local.isHand:
+                    mensaje_temporal = f"{player_name_que_pasoD} pasó del descarte. Compra habilitada temporalmente."
+                    mensaje_tiempo = time.time()
+
+            elif isinstance(msg,dict) and msg.get("type")=="INICIAR_COMPRA":
+                player_id_que_compraC = msg.get("playerId")
+                player_name_que_compraC = msg.get("playerName")
+                next_idx_player_isHand = msg.get("next_idx_player_isHand")
+                idx_player_jugador_local = msg.get("idx_player_jugador_local")
+                
+                print(f"Mensaje de INICIAR COMPRA recibido del Player ID: {player_id_que_compraC}")
+
+                noBuy = False
+
+                """ for i in range(next_idx_player_isHand, idx_player_jugador_local):
+                    players[i].playerTurn = True """
+
+                mensaje_temporal = f"{player_name_que_compraC} quiere comprar la carta."
+                mensaje_tiempo = time.time()
+
+            elif isinstance(msg,dict) and msg.get("type")=="FIN_CICLO_COMPRA":
+                player_id_que_finalizoC = msg.get("playerId")
+                
+                print(f"Mensaje de FIN CICLO COMPRA recibido del Player ID: {player_id_que_finalizoC}")
+
+                bought = True
+                waiting = False
+                time_waiting = None
+                print(f"Waiting y time_waiting: ({waiting}, {time_waiting})")
+
+                mensaje_temporal = "Tiempo de espera finalizado."
+                mensaje_tiempo = time.time()
 
             elif isinstance(msg,dict) and msg.get("type")=="DESCARTE":
                 #print(f"Prueba de isHand ANTES JUGADOR: {[p.isHand for p in players]}")
@@ -1476,6 +1532,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 
                 received_round = msg.get("round")
                 
+                noBuy = True
+                bought = False
+                waiting = False
+                time_waiting = None
+                print(f"Valor de bought: {bought}")
+
                 if received_round:
                     round = received_round
                     deckForRound = round.pile
@@ -1506,19 +1568,38 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 mazo_descarte = mazo_de_descarte
                 
             elif isinstance(msg,dict) and msg.get("type")=="COMPRAR_CARTA":   # Revisar la lógica... No vi la función append>>> Por es lo digo
-                player_id_que_tomoC = msg.get("playerId")
-                mano_restante = msg.get("playerHand")  # Lista de objetos Card
-                cartasDescartadas = msg.get("cartas_descartadas")
-                round = msg.get("round")
+                mano_actualizada = msg.get("playerHand")
+                player_id_que_compro = msg.get("playerId")
+                player_name_que_compro = msg.get("playerName")
+                mazo_de_descarte = msg.get("mazo_descarte")
+                deck_for_round = msg.get("deckForRound")
+                # mano_restante = msg.get("playerHand")  # Lista de objetos Card
+                # cartasDescartadas = msg.get("cartas_descartadas")
+                # players[:] = msg.get("players")
+                received_round = msg.get("round")
 
-                print(f"Mensaje de DESCARTE recibido del Player ID: {player_id_que_se_bajo}")
+                noBuy = True
+                bought = True
+
+                print(f"Mensaje de COMPRAR CARTA recibido del Player ID: {player_id_que_compro}")
                 for p in players:
-                    if p.playerId == player_id_que_tomoC:
+                    if p.playerId == player_id_que_compro:
+                        p.playerHand = mano_actualizada
                         #p.playerHand = mano_restante
                         #???cartas_descartadas = cartasDescartadas
                         #mazo_descarte = mazo_de_descarte
                         #zona_cartas = zonaCartas
-                        pass
+                
+                if received_round:
+                    round = received_round
+                    deckForRound = round.pile
+                    mazo_descarte = round.discards
+                else:
+                    print("Algo salio mal con la transmision de la compra, Houston...")
+
+                mensaje_temporal = f"{player_name_que_compro} compro la carta."
+                mensaje_tiempo = time.time()
+                
         # Fin procesar mensajes del juego...
         ###### SIgo aqui...
             
@@ -1568,13 +1649,36 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                 elif nombre:
                     if nombre == "Tomar carta":
-                        if jugador_local.cardDrawn:
+
+                        if not bought and jugador_local.isHand and not jugador_local.cardDrawn:
+
+                            msgPasarD = {
+                                    "type": "PASAR_DESCARTE",
+                                    "playerId": jugador_local.playerId,
+                                    "playerName": jugador_local.playerName
+                            }
+
+                            waiting = True
+                            time_waiting = time.time()
+
+                            mensaje_temporal = "Esperando decision de compra de los otros jugadores."
+                            mensaje_tiempo = time.time()
+
+                            if network_manager.is_host:
+                                network_manager.broadcast_message(msgPasarD)
+                            elif network_manager.player:
+                                network_manager.sendData(msgPasarD)
+
+                            # time.sleep(3)
+                            # bought = True
+                            break
+                        elif jugador_local.cardDrawn and noBuy:
                             mensaje_temporal = "Ya tomaste una carta en este turno."
                             mensaje_tiempo = time.time()
-                        elif not jugador_local.isHand:
+                        elif not jugador_local.isHand and noBuy:
                             mensaje_temporal = "No puedes tomar cartas porque no es tu turno."
                             mensaje_tiempo = time.time()
-                        else:
+                        elif noBuy and not waiting:
                             #print(f"jugadors {[p for p in players]}")
                             #print(f"El jugador local {jugador_local}")
                             cardTaken = drawCard(jugador_local, round, False)
@@ -1599,11 +1703,18 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 "playerHand": jugador_local.playerHand,
                                 "playerId": jugador_local.playerId,
                                 "mazo": deckForRound, #  El mazo se debe actualizar
+                                "round": round
                                 }
+                            
+                            jugador_local.playerPass = False
+
                             if network_manager.is_host:
                                 network_manager.broadcast_message(msgTomarC)
                             elif network_manager.player:
                                 network_manager.sendData(msgTomarC)
+                        else:
+                            mensaje_temporal = "Hay una compra activa en este momento. Toma del mazo cuando culmine."
+                            mensaje_tiempo = time.time()
                     elif nombre == "Tomar descarte":
                         if jugador_local.cardDrawn:
                             mensaje_temporal = "Ya tomaste una carta."
@@ -1611,7 +1722,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         elif not jugador_local.isHand:
                             mensaje_temporal = "No puedes tomar cartas porque no es tu turno."
                             mensaje_tiempo = time.time()
-                        else:
+                        elif bought:
+                            mensaje_temporal = "No puedes tomar del mazo de descarte porque la carta se ha quemado."
+                            mensaje_tiempo = time.time()
+                        elif not waiting and round.discards and noBuy:
                             #print(f"Mano del jugador ANTES DE tomar la carta: {[str(c) for c in jugador_local.playerHand]}")
                             cardTakenD = drawCard(jugador_local, round, True)
                             #print(f"Mano del jugador al tomar la carta:........ {[str(c) for c in jugador_local.playerHand]}")
@@ -1636,7 +1750,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             print(f"Mano visual: {[str(c) for c in visual_hand]}")
                             jugador_local.cardDrawn = True
                             organizar_habilitado = True
-                            cartas_ocultas.clear()
+                            #cartas_ocultas.clear()
 
 
                             msgTomarDescarte = {
@@ -1647,11 +1761,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 "mazo_descarte": mazo_descarte,
                                 "round": round
                                 }
+                            
+                            bought = True
+
                             if network_manager.is_host:
                                 network_manager.broadcast_message(msgTomarDescarte)
                             elif network_manager.player:
                                 network_manager.sendData(msgTomarDescarte)
-
+                        else:
+                            mensaje_temporal = "No puedes tomar el descarte mientras el ciclo de compra este activo."
+                            mensaje_tiempo = time.time()
 
                     elif nombre == "Bajarse":
                         send = False # Para controlar el envío del mensaje de "BAJARSE"
@@ -1773,7 +1892,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 visual_hand.append(carta)
                             reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                             organizar_habilitado = True
-                            cartas_ocultas.clear()
+                            #cartas_ocultas.clear()
 
                             msgBajarse = {
                                 "type":"BAJARSE",
@@ -1847,11 +1966,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 for c in cartas_descartadas:
                                     if c not in jugador_local.playerHand:
                                         jugador_local.playerHand.append(c)
-                                zona_cartas[2] = []
-                                jugador_local.isHand = True
                                 cartas_ocultas.clear()
-
-                            else:
+                                zona_cartas[2] = []
+                                # jugador_local.isHand = True
+                            elif jugador_local.isHand and jugador_local.canDiscard:
                                 # descarte válido: sincronizar vistas y limpiar bloqueo
                                 visual_hand = compactar_visual_hand(visual_hand)
                                 actualizar_indices_visual_hand(visual_hand)
@@ -1865,8 +1983,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                 organizar_habilitado = True
                                 jugador_local.cardDrawn = False
-                                cartas_ocultas.clear()
-
                                 # Guarda la carta descartada en el mazo de descarte
                                 for carta in cartas_descartadas:
                                     if len(cartas_descartadas) == 2 and hasattr(cartas_descartadas[1], "joker") and cartas_descartadas[1].joker:
@@ -1888,7 +2004,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 players[next_idx].isHand = True
                                 #print(f"Prueba de isHand DESPUES: {[p.isHand for p in players]}")
 
-                                
+                                bought = False
+                                noBuy = True
+
                                 msgDescarte = {
                                     "type": "DESCARTE",
                                     "cartas_descartadas": cartas_descartadas,
@@ -1905,8 +2023,126 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     network_manager.sendData(msgDescarte)
                     elif nombre == "Comprar carta":
                         #CAMBIO 2
-                        card_to_show = mazo_descarte[-1] if mazo_descarte else None
-                        wants = confirm_buy_card(screen, card_to_show, WIDTH, HEIGHT, ASSETS_PATH, font)
+                        if not jugador_local.isHand: # El jugador MANO no puede comprar cartas...
+
+                            if not bought:
+
+                                jugador_mano_actual = [p for p in players if p.isHand][0] # Encontramos al jugador MANO actualmente
+                            
+                                print(f"MANO actual: {jugador_mano_actual}")
+                                print(f"Valor de playerPass del MANO: {jugador_mano_actual.playerPass}")
+                                if jugador_mano_actual.playerPass: # Verificamos el valor de "playerPass", para saber si la compra esta permitida.
+
+                                    print(f"Valor de jugador_local: {jugador_local}")
+                                    # Encontramos la posicion del jugador local en la lista de jugadores (el que activo la compra de cartas)
+                                    indice_jugador_local = None
+                                    for idx, player in enumerate(players):
+                                        if player.playerId == jugador_local.playerId:
+                                            indice_jugador_local = idx
+                                            break
+                                    
+                                    # Buscamos la posicion del jugador MANO en la lista de jugadores y calculamos el indice que le sigue.
+                                    indice_mano_actual = None
+                                    siguiente_idx = None
+                                    for idx, player in enumerate(players):
+                                        if player.playerId == jugador_mano_actual.playerId:
+                                            indice_mano_actual = idx
+                                            siguiente_idx = (idx + 1) % len(players)
+                                            break
+
+                                    msgIniciarCompra = {
+                                        "type": "INICIAR_COMPRA",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName,
+                                        "next_idx_player_isHand": siguiente_idx,
+                                        "idx_player_jugador_local": indice_jugador_local
+                                    }
+
+                                    noBuy = False
+                                    jugador_local.playerTurn = True
+
+                                    if network_manager.is_host:
+                                        network_manager.broadcast_message(msgIniciarCompra)
+                                    else:
+                                        network_manager.sendData(msgIniciarCompra)
+                                    
+                                    # Si no hay cartas en la pila de descartes, no se puede comprar nada.
+                                    if not round.discards:
+                                        mensaje_temporal = "No hay cartas para comprar en este momento."
+                                        mensaje_tiempo = time.time()
+                                        continue
+                                    # Si el indice del jugador que viene luego del MANO coincide con el indice del jugador local, 
+                                    # se sigue el proceso de compra sin mostrar la pantalla de confirmacion (tiene la maxima prioridad).
+                                    elif siguiente_idx == indice_jugador_local and jugador_local.playerTurn:
+                                        
+                                        # Indicamos que el jugador compra la carta.
+                                        jugador_local.playerBuy = True
+                                        print(f"Pila antes de compra: {[c for c in round.pile]}")
+                                        cards_bought = jugador_local.buyCard(round)
+                                        print(f"Pila despues de compra: {[c for c in round.pile]}")
+                                        # jugador_local.playerHand = round.hands[jugador_local.playerId]
+                                        cartas_ocultas.clear()
+                                        zona_cartas[2] = [] # Limpiamos la zona de descartes.
+                                        print(f"Mano del jugador que compro: {jugador_local.playerHand}")
+                                        
+                                        # players[indice_mano_actual].playerPass = False
+                                        players[indice_mano_actual].isHand = True
+                                        players[indice_jugador_local].isHand = False
+                                        print("Se reseteo el valor de playerPass del MANO a False.")
+
+                                        for idx, carta in enumerate(jugador_local.playerHand):
+                                            carta.id_visual = idx
+                                            visual_hand.append(carta)
+
+                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                                        mazo_descarte = round.discards
+                                        deckForRound = round.pile
+
+                                        msgComprarC = {
+                                                "type": "COMPRAR_CARTA",
+                                                # "cartas_descartadas": cartas_descartadas,
+                                                "playerHand": jugador_local.playerHand,
+                                                "playerId": jugador_local.playerId,
+                                                "playerName": jugador_local.playerName,
+                                                "mazo_descarte": mazo_descarte,#  El mazo se debe actualizar
+                                                "deckForRound": deckForRound,
+                                                "zona_cartas": zona_cartas,
+                                                # "players": players,
+                                                "round": round
+                                        }
+
+                                        noBuy = True
+                                        bought = True
+
+                                        if network_manager.is_host:
+                                            network_manager.broadcast_message(msgComprarC)
+                                        else:
+                                            network_manager.sendData(msgComprarC)
+                                    elif jugador_local.playerTurn:
+                                        pass
+                                        """ for i in range(1, len(players)):
+                                            pass
+
+                                        card_to_show = mazo_descarte[-1] if mazo_descarte else None
+                                        wants = confirm_buy_card(screen, card_to_show, WIDTH, HEIGHT, ASSETS_PATH, font) """
+                                    else:
+                                        mensaje_temporal = "Un jugador mas cercano al MANO quiere comprar."
+                                        mensaje_tiempo = time.time()
+                                        continue
+                                else:
+                                    mensaje_temporal = "El jugador MANO aún no ha elegido una carta."
+                                    mensaje_tiempo = time.time()
+                                    continue
+                            else:
+                                mensaje_temporal = "El ciclo de compra ha finalizado."
+                                mensaje_tiempo = time.time()
+                                continue
+                        else:
+                            mensaje_temporal = "Botón inhabilitado: eres el jugador MANO."
+                            mensaje_tiempo = time.time()
+                            continue
+
+                        wants = False
                         if wants:                        
                             jugador_local.playerBuy = True
                             # Aquí deberías tener la lógica de comprar carta
@@ -1926,7 +2162,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     carta.id_visual = idx
                                     visual_hand.append(carta)
 
-                                # Creo que no está la lógica para comprar la Carta... para comprar, No debe ser su turno... 
+                                """ # Creo que no está la lógica para comprar la Carta... para comprar, No debe ser su turno... 
                                 msgComprarC = {
                                     "type": "COMPRAR_CARTA",
                                     #?    "cartas_descartadas": cartas_descartadas,
@@ -1939,7 +2175,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 if network_manager.is_host:
                                     network_manager.broadcast_message(msgComprarC)
                                 else:
-                                    network_manager.sendData(msgComprarC)
+                                    network_manager.sendData(msgComprarC) """
                             else: 
                             # El jugador eligió no comprar: no hacemos nada
                                 pass
@@ -2207,6 +2443,29 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 cartas_ocultas.clear()
                 organizar_habilitado = True  # Vuelve a habilitar organización
         # Fin evento de pygame...
+        if waiting and (time.time() - time_waiting) > 4 and noBuy:
+            print(f"Temporizador, waiting, time_waiting, noBuy: ({waiting}, {time_waiting}, {noBuy})")
+
+            if jugador_local.isHand:
+
+                msgFinCicloCompra = {
+                                    "type": "FIN_CICLO_COMPRA",
+                                    "playerId": jugador_local.playerId,
+                }
+
+                print("FINALIZO EL TIEMPO, VALEEEEE!")
+
+                bought = True
+                waiting = False
+                time_waiting = None
+
+                if network_manager.is_host:
+                    network_manager.broadcast_message(msgFinCicloCompra)
+                elif network_manager.player:
+                    network_manager.sendData(msgFinCicloCompra)
+
+                mensaje_temporal = "Espera finalizada. Vuelve a hacer click en el mazo para tomar una carta."
+                mensaje_tiempo = time.time()
 
         process_received_messagesUi2()  
         #------ Hasta aqui el bucle de event de PYGAME ------------
@@ -3283,8 +3542,9 @@ def process_received_messagesUi2():
                 if isinstance(data, dict) and data.get("type") in ["ELECTION_CARDS","SELECTION_UPDATE", "ESTADO_CARTAS", "ORDEN_COMPLETO"]:
                     network_manager.game_state.update(data)
                     print(f"Estado del juego actualizado: {network_manager.game_state}")
-                elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE"]:
+                elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA", "FIN_CICLO_COMPRA"]:
                     network_manager.moves_gameServer.append(data)
+                    print(f" Jugada del jugador recibida:{data.get("type"),network_manager.moves_gameServer}")
                 # Si es otro tipo de estructura/mensaje no clasificado
                 else:
                     network_manager.incoming_messages.append(("raw", data)) # Opcional: para mensajes no clasificados

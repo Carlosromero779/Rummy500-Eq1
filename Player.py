@@ -26,6 +26,7 @@ class Player:
         self.connected = False #Nos permitirá saber si el jugador está conectado al servidor o no
         self.carta_elegida = False  #NUEVO PARA PRUEBA
         self.discarded = False
+        self.canDiscard = True # Atrib. que permite bloquear o desbloquear el descarte (para compra de cartas)
 
     def __str__(self):
         return f"({self.playerId}, {self.playerName})"
@@ -840,11 +841,14 @@ class Player:
         discardedCard = round.discards.pop()
         #Si el jugador decidió comprar la carta del descarte, se le entrega dicha carta y además se le da una del mazo como castigo
         if self.playerBuy and not self.isHand:
-            self.playerHand.append(discardedCard)
-            extraCard = drawCard(self.playerName, round, False)
-            self.playerBuy = False
-            print(f"El jugador {self.playerName} compró la carta {discardedCard} y recibió una carta del mazo como castigo")
-            return [discardedCard + extraCard]
+            extraCard = round.pile.pop()  #Sacamos la última carta del mazo
+            round.hands[self.playerId].append(extraCard)  #Añadimos la carta a la mano del jugador
+            # self.playerHand.append(discardedCard)
+            round.hands[self.playerId].append(discardedCard)
+            self.playerHand = round.hands[self.playerId]
+            print(f"El jugador {self.playerName} compró la carta {discardedCard} y recibió una carta: {extraCard}, del mazo como castigo")
+            return [discardedCard, extraCard]
+            # return round
         else:
             print(f"El jugador {self.playerName} no compró la carta del descarte")
             return None

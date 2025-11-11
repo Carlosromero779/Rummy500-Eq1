@@ -383,8 +383,9 @@ class NetworkManager:
                         self.incoming_messages.append(("chat", received_data)) 
                         print(f"Mensaje de chat/notificación recibido: {received_data}")
    
-                    elif isinstance(received_data, dict) and received_data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE"]:
+                    elif isinstance(received_data, dict) and received_data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA", "FIN_CICLO_COMPRA"]:
                         self.moves_game.append(received_data)
+                        print(f" Jugada del jugador recibida:{received_data.get("type"),self.moves_game}")
                     # Si es otro tipo de estructura/mensaje no clasificado
                     else:
                         # Puedes mantener el antiguo self.receivedData para mensajes no tipificados,
