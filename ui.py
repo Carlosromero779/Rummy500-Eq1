@@ -575,9 +575,9 @@ class   UIManager:
         
         # Usamos exactamente el mismo recuadro y posición que draw_create_menu
         box_width = 600
-        box_height = 250
+        box_height = 280
         box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + 50
+        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + 60
     
         # Dibuja el mismo recuadro usando cuadro.png escalado
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
@@ -588,7 +588,7 @@ class   UIManager:
         input_w = 360
         gap = 12
         content_total_w = label_w + gap + input_w
-        base_x = box_x + (box_width - content_total_w) // 2
+        base_x = box_x + (box_width - content_total_w) // 2 + 20 
         label_x = base_x
         input_x = base_x + label_w + gap
 
@@ -624,36 +624,43 @@ class   UIManager:
             noServers_rect.y += 0
             self.SCREEN.blit(noServers, noServers_rect)
 
-        if self.response == "No ha seleccionado un servidor":
-            ####noSelectServer = smaller_font.render("No ha seleccionado un servidor", True, (0,0,0))
-            ####self.SCREEN.blit(noSelectServer, (input_req_x + 100, box_y + 70)) 
-            #-------------------------------
-            if pygame.time.get_ticks() < self.no_server_until:
-                noSelectServer = smaller_font.render("Seleccione", True, (255,255,255))
-                self.SCREEN.blit(noSelectServer, (input_x + input_w - 10, box_y + 150)) 
-                noSelectServer2 = smaller_font.render("un servidor", True, (255,255,255))
-                self.SCREEN.blit(noSelectServer2, (input_x + input_w - 10, box_y + 175)) 
-            else:
-                self.response = None
-            
-        elif self.response == "wrongPassword":
-            if pygame.time.get_ticks() < self.wrong_password_until:
-                wrongPassword = smaller_font.render("Contraseña", True, (255,255,255))
-                self.SCREEN.blit(wrongPassword, (input_x + input_w - 10, box_y + 150))
-                wrongPassword2 = smaller_font.render("Incorrecta", True, (255,255,255))
-                self.SCREEN.blit(wrongPassword2, (input_x + input_w - 10, box_y + 175))
-            else:
-                self.response = None
+        now = pygame.time.get_ticks()
+        # mover 100 px a la derecha respecto al centro del input
+        msg_x = input_x + input_w // 2 + 70
+        msg_y = box_y + 150
 
-        elif self.response == "fullserver":
-            if pygame.time.get_ticks() < self.fullserver_until:
-                fullserver = smaller_font.render("Sala", True, (255,255,255))
-                self.SCREEN.blit(fullserver, (input_x + input_w - 10, box_y + 150))
-                fullserver2 = smaller_font.render("Llena", True, (255,255,255))
-                self.SCREEN.blit(fullserver2, (input_x + input_w - 10, box_y + 175))
-            else:
-                self.response = None
+        # Normalizar respuesta y comprobar timeouts
+        resp = (getattr(self, "response", "") or "").strip()
+        resp_l = resp.lower()
 
+
+
+        show = False
+        color = (255, 255, 255)
+        linea1 = linea2 = None
+
+        if (getattr(self, "wrong_password_until", 0) > now) or ("wrong" in resp_l) or ("contrase" in resp_l):
+            linea1 = "Contraseña"
+            linea2 = "Incorrecta"
+            show = True
+        elif (getattr(self, "fullserver_until", 0) > now) or ("full" in resp_l) or ("sala llena" in resp_l) or ("llena" in resp_l):
+            linea1 = "Sala"
+            linea2 = "Llena"
+            show = True
+        elif (getattr(self, "no_server_until", 0) > now) or ("no ha seleccionado" in resp_l) or ("seleccion" in resp_l) or ("no server" in resp_l):
+            linea1 = "Seleccione"
+            linea2 = "un servidor"
+            show = True
+
+        if show and linea1:
+            surf1 = smaller_font.render(linea1, True, color)
+            surf2 = smaller_font.render(linea2, True, color)
+            rect1 = surf1.get_rect(center=(msg_x, msg_y))
+            rect2 = surf2.get_rect(center=(msg_x, msg_y + surf1.get_height() + 4))
+
+            # Sin fondo: sólo dibujar los textos (no se sobreescribe nada detrás)
+            self.SCREEN.blit(surf1, rect1.topleft)
+            self.SCREEN.blit(surf2, rect2.topleft)
         # Etiqueta para el campo de Nombre Sala (alineada a la izquierda del input, pero todo centrado)
         ip_label = smaller_font.render("Nombre Sala:", True, "#d7fcd4")
         ip_label_rect = ip_label.get_rect()
@@ -665,7 +672,7 @@ class   UIManager:
         player_label = smaller_font.render("Nombre del Jugador:", True, "#d7fcd4")
         player_label_rect = player_label.get_rect()
         player_label_rect.right = input_x - 8
-        player_label_rect.centery = box_y + 100
+        player_label_rect.centery = box_y + 110
         self.SCREEN.blit(player_label, player_label_rect)
         self.join_player_input_box.draw(self.SCREEN)
         self.join_player_input_box.rect.topleft = (input_x, box_y + 90)
@@ -675,7 +682,7 @@ class   UIManager:
         pw_label = smaller_font.render("Contraseña:", True, "#d7fcd4")
         pw_label_rect = pw_label.get_rect()
         pw_label_rect.right = input_x - 8
-        pw_label_rect.centery = box_y + 150
+        pw_label_rect.centery = box_y + 160
         self.SCREEN.blit(pw_label, pw_label_rect)
         self.join_password_input_box.draw(self.SCREEN)
         self.join_password_input_box.rect.topleft = (input_x, box_y + 140)
@@ -1102,14 +1109,21 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                                 print("ClaveCorrecta.... Probando")
                                 self.current_screen = "lobby"
                             elif acep==False:
-                                if resp=="Contraseña incorrecta":
+                                # Normalizar respuesta y buscar palabras clave para manejar variantes
+                                resp_norm = (resp or "").strip().lower()
+                                if "contrase" in resp_norm or "wrong" in resp_norm:
                                     self.response = "wrongPassword"
                                     self.wrong_password_until = pygame.time.get_ticks() + 2000
                                     print("Contraseña incorrecta")
-                                elif resp=="La Sala está llena":
+                                elif "full" in resp_norm or "llena" in resp_norm or "servidor" in resp_norm:
                                     self.response = "fullserver"
                                     self.fullserver_until = pygame.time.get_ticks() + 2000
-                                    print("La sala está llena")
+                                    print("La sala está llena (detectada por keyword)")
+                                else:
+                                    # fallback: guardar texto original para debug y mostrar mensaje genérico
+                                    self.response = resp or ""
+                                    self.fullserver_until = pygame.time.get_ticks() + 2000
+                                    print(f"Respuesta no esperada al conectar: {resp}")
                         else:
                             self.response = "No ha seleccionado una sala"
                             self.no_server_until = pygame.time.get_ticks() + 2000
@@ -1173,9 +1187,9 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         if msg:
                             # Enviando mensajes del servidor/jugador
                             if self.network_manager.server:
-                                formattedMsg = f"Host: {msg}" 
+                                formattedMsg = f"{self.network_manager.playerName}: {msg}" 
                                 with self.chatLock:
-                                    self.network_manager.messagesServer.append(formattedMsg)
+                                    self.network_manager.messagesServer.append(f"Tú: {msg}")
                                     print(f"en la lista de mensajes: {self.messages}")
                                 
                                 # Transmitiendo a todos los jugadores
@@ -1211,9 +1225,9 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     msg = self.message_input_box.text.strip()
                     if msg:
                         if getattr(self.network_manager, "server", False):
-                            formattedMsg = f"Host: {msg}"
+                            formattedMsg = f"{self.network_manager.playerName}: {msg}"
                             with self.chatLock:
-                                self.network_manager.messagesServer.append(formattedMsg)
+                                self.network_manager.messagesServer.append(f"Tú: {msg}")
                         try:
                             self.network_manager.broadcast_message(formattedMsg)
                         except Exception:
@@ -1255,16 +1269,15 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 return players
 
             # Si es un mensaje de chat (string que empieza con "Host:" o "Jugador")
-            if isinstance(data, str) and (data.startswith("Host:") or data.startswith("Jugador")):
+            if isinstance(data, str) and ":" in data:
                 with self.chatLock:
                     # Solo agregar si no es un mensaje duplicado del propio usuario
-                    if not (data.startswith("Tú:") or (self.network_manager.is_host and data.startswith("Host:"))):
-                        #self.messages.append(data)
+                    if not (data.startswith("Tú:") or (self.network_manager.is_host and data.startswith(f"{self.network_manager.playerName}:"))):
                         self.network_manager.messagesServer.append(data)
-                        # Mantener solo los últimos mensajes
+                        # Mantener solo los últimos 20 mensajes
                         if len(self.network_manager.messagesServer) > 20:
                             self.network_manager.messagesServer = self.network_manager.messagesServer[-20:]            
-            
+                
             elif isinstance(data, tuple):
                 # Procesar otros tipos de mensajes estructurados
                 pass

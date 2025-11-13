@@ -8,6 +8,7 @@ from Round import Round
 from Deck import Deck
 from Card import Card
 import threading
+import sys
 
 
 network_manager = None   #NetworkManager()
@@ -35,7 +36,22 @@ ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
 fondo_path = os.path.join(ASSETS_PATH, "fondo_juego.png")
 fondo_img = pygame.image.load(fondo_path).convert()
 fondo_img = pygame.transform.scale(fondo_img, (WIDTH, HEIGHT))
-
+# --- Iniciar fuente centralizada del juego ---
+FONT_FILE = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
+_fonts_cache = {}
+def get_game_font(size):
+    """Devuelve pygame.font.Font cargada desde assets o SysFont si falla; cachea por tamaño."""
+    if size in _fonts_cache:
+        return _fonts_cache[size]
+    try:
+        if os.path.exists(FONT_FILE):
+            f = pygame.font.Font(FONT_FILE, size)
+        else:
+            f = pygame.font.SysFont("arial", size)
+    except Exception:
+        f = pygame.font.SysFont("arial", size)
+    _fonts_cache[size] = f
+    return f
 # Colores (con alpha para transparencia)
 CAJA_JUG = (70, 130, 180, 60)   # Más transparente
 CAJA_BAJ = (100, 200, 100, 60)
@@ -65,6 +81,8 @@ mazo_descarte = []  # Lista para el mazo de descarte
 last_taken_card = None
 last_taken_player = None
 #Cambio Boton Menu / Salir
+
+
 
 def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH):
     import pygame
@@ -169,86 +187,116 @@ def can_discard(player, cards):
                 return False
     return True
 
-def string_to_card(card_str):
-    #verificamos si card_str es una lista
-    if isinstance(card_str, list):
-        for c in card_str:
-            if c == "Joker":
-                return Card("Joker", "", joker=True)
-            value = c[:-1]
-            suit = c[-1]
-            return Card(value, suit)
-    elif not isinstance(card_str, str) and not isinstance(card_str, list):
-        return card_str
-    else:
-        if card_str == "Joker":
-            return Card("Joker", "", joker=True)
-        value = card_str[:-1]    # todo menos el último carácter (valor)
-        suit = card_str[-1]      # último carácter (palo)
-        return Card(value, suit)
+# ---------------------- Helpers robustos para UI ----------------------
+from Card import Card
+
+def string_to_card(card_string_or_object):
+    """
+    Si recibe string como 'A♥' o 'Joker', devuelve Card(...).
+    Si recibe lista con strings, intenta convertir cada elemento.
+    Si recibe ya un Card, lo devuelve.
+    """
+    if isinstance(card_string_or_object, Card):
+        return card_string_or_object
+    if isinstance(card_string_or_object, list):
+        # retorna lista de Card o lista original si ya son Card
+        return [string_to_card(c) for c in card_string_or_object]
+    if not isinstance(card_string_or_object, str):
+        return card_string_or_object
+
+    # es str
+    if card_string_or_object == "Joker":
+        return Card("Joker", "", joker=True)
+    # valor == todo menos último char, palo == último char
+    value = card_string_or_object[:-1]
+    suit = card_string_or_object[-1]
+    return Card(value, suit)
+
+def resolve_play(jugador, raw_play, play_index=None):
+    """
+    raw_play puede ser:
+      - una lista de Card (ok) -> devuelve la misma lista
+      - una lista de str -> si jugador tiene 'jugadas_bajadas' usa esa para resolver
+      - un dict -> devolver dict convertida con Card objects
+    Devuelve la estructura con cartas como objetos Card (no strings). Si no puede resolver,
+    devuelve None.
+    """
+    # caso ya resuelto
+    if isinstance(raw_play, dict):
+        resolved = {}
+        if "trio" in raw_play and raw_play["trio"]:
+            resolved["trio"] = [string_to_card(c) for c in raw_play["trio"]]
+        if "straight" in raw_play and raw_play["straight"]:
+            resolved["straight"] = [string_to_card(c) for c in raw_play["straight"]]
+        return resolved
+
+    if isinstance(raw_play, list) and raw_play and isinstance(raw_play[0], str):
+        # busca en jugadas_bajadas si existe
+        if hasattr(jugador, "jugadas_bajadas") and play_index is not None and len(jugador.jugadas_bajadas) > play_index:
+            return jugador.jugadas_bajadas[play_index]
+        # no hay resolved, intentar convertir strings a Card
+        try:
+            return [string_to_card(s) for s in raw_play]
+        except Exception:
+            return None
+
+    # si es lista de Card o mezcla:
+    if isinstance(raw_play, list):
+        return [string_to_card(c) for c in raw_play]
+
+    # fallback
+    return raw_play
+# --------------------------------------------------------------------
+
 
 # Nueva función: valida tipos y llama insertCard solo si todo está correcto
-def safe_insert_card(current_player, target_player, target_index, card_to_insert, position):
+def safe_insert_card(jugador, target_player, idx_jugada, card_to_insert, position, target_subtype=None):
     """
-    Wrapper seguro para llamar a Player.insertCard.
-    - Convierte card_to_insert a Card si es string.
-    - Valida índice de playMade.
-    - Retorna True sólo si insertCard devolvió True (inserción real realizada).
+    Valida tipos y que la jugada objetivo tenga objetos Card.
+    target_subtype: "trio" | "straight" | None (None -> intenta inferir)
     """
     from Card import Card
-
-    # Normalizar carta a objeto Card si viene como string
-    try:
-        if not isinstance(card_to_insert, Card):
-            card_obj = string_to_card(card_to_insert)
-        else:
-            card_obj = card_to_insert
-    except Exception as e:
-        print("safe_insert_card: error al convertir carta:", e)
-        return False
-
-    if target_player is None:
-        print("safe_insert_card: target_player es None")
+    objeto_carta = string_to_card(card_to_insert)
+    print(f"Objeto de carta: {objeto_carta}")
+    print(f"String de carta: {card_to_insert}")
+    # normaliza carta
+    if not isinstance(card_to_insert, Card):
+        print("safe_insert_card: card_to_insert NO es Card:", type(card_to_insert), repr(card_to_insert))
         return False
 
     plays = getattr(target_player, "playMade", [])
-    if not plays:
-        print("safe_insert_card: target_player.playMade vacío")
+    if idx_jugada < 0 or idx_jugada >= len(plays):
+        print("safe_insert_card: idx_jugada fuera de rango:", idx_jugada, "len(playMade)=", len(plays))
         return False
 
-    # Si target_index fuera None, usar la última jugada
-    if target_index is None:
-        target_index = len(plays) - 1
+    target_play = plays[idx_jugada]
 
-    if target_index < 0 or target_index >= len(plays):
-        print("safe_insert_card: target_index fuera de rango:", target_index)
-        return False
-
-    # Verificar que las cartas en la jugada objetivo sean objetos Card (sanity)
-    target_play = plays[target_index]
+    # si target_play es dict, elegimos la sublista correcta
     if isinstance(target_play, dict):
-        cartas_jugada = target_play.get("trio") or target_play.get("straight") or []
+        if target_subtype == "trio":
+            cartas_jugada = target_play.get("trio", [])
+        elif target_subtype == "straight":
+            cartas_jugada = target_play.get("straight", [])
+        else:
+            # intentar inferir: preferir straight si existe no vacío
+            cartas_jugada = target_play.get("straight") or target_play.get("trio") or []
     else:
         cartas_jugada = target_play or []
 
+    # Validar que cartas_jugada sean objetos Card
     for c in cartas_jugada:
+        string_to_card(c)
         if not isinstance(c, Card):
             print("safe_insert_card: elemento en la jugada objetivo NO es Card:", type(c), repr(c))
-            print("target_player.playMade[{}] = {}".format(target_index, target_play))
+            print("target_player.playMade[{}] = {}".format(idx_jugada, target_play))
             return False
 
-    # Llamar al método real y CAPTURAR su resultado
+    # Todo bien: llamar al método real. Importante: aquí llamamos con idx_jugada (índice en playMade).
     try:
-        result = current_player.insertCard(targetPlayer=target_player,
-                                           targetPlayIndex=target_index,
-                                           cardToInsert=card_obj,
-                                           position=position)
-        # insertCard debe devolver True/False; respetarlo
-        if result:
-            return True
-        else:
-            print("safe_insert_card: insertCard devolvió False (jugada inválida).")
-            return False
+        # Si tu Player.insertCard espera trabajar con dict y asume 'straight' por defecto,
+        # esto funcionará. Si insertCard necesita un subtype explícito, habría que pasarlo.
+        jugador.insertCard(targetPlayer=target_player, targetPlayIndex=idx_jugada, cardToInsert=card_to_insert, position=position)
+        return True
     except Exception as e:
         print("safe_insert_card: excepción al llamar insertCard:", e)
         return False
@@ -435,12 +483,22 @@ def confirm_buy_card(screen, card, WIDTH, HEIGHT, ASSETS_PATH, font):
 
 
 
-def choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH):
+def choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, fase):
     """
-    Modal: Pregunta "Donde deseas insertar la carta?"
-    Botones: Trio / Seguidilla
-    Devuelve: "trio", "straight" o None si se cierra.
+    Modal: Pregunta "Dónde deseas insertar la carta?"
+    Botones según fase:
+        Ronda 1: Trio / Seguidilla
+        Ronda 2: Seguidilla 2 / Seguidilla 1
+        Ronda 3: Trio 1 / Trio 2 / Trio 3
+        Ronda 4: Trio 1 / Trio 2 / Seguidilla
+    Devuelve: nombre del botón elegido o None si se cierra.
     """
+    jugador_local = globals().get("jugador_local", None)
+    # Mostrar modal SOLO si el jugador local existe, se ha bajado y está en su turno (isHand True)
+    if jugador_local is None or not getattr(jugador_local, "downHand", False) or not getattr(jugador_local, "isHand", False):
+        return None
+    # ------------------------------------------------------------------------
+
     clock = pygame.time.Clock()
     try:
         background_snapshot = screen.copy()
@@ -451,20 +509,41 @@ def choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH):
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 140))
 
-    w, h = 360, 180
+    w, h = 380, 180
     x = (WIDTH - w) // 2
     y = (HEIGHT - h) // 2
     modal_rect = pygame.Rect(x, y, w, h)
     padding = 14
 
-    # botones
-    btn_w, btn_h = 140, 44
-    btn_trio = pygame.Rect(x + padding, y + h - padding - btn_h, btn_w, btn_h)
-    btn_straight = pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h)
+    # botón de cierre (X) en la esquina superior derecha del modal
+    close_btn_size = 28
+    close_btn_rect = pygame.Rect(x + w - close_btn_size - 8, y + 8, close_btn_size, close_btn_size)
+
+    # botones principales
+    btn_w, btn_h = 100, 44
+    buttons = []
 
     font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
     title_font = pygame.font.Font(font_path, 16)
     info_font = pygame.font.Font(font_path, 12)
+
+    # Crear botones según ronda
+    if fase == "ronda1":
+        buttons = [("Trio", pygame.Rect(x + padding, y + h - padding - btn_h, btn_w + 40, btn_h)),
+                   ("Seguidilla", pygame.Rect(x + w - padding - btn_w - 40, y + h - padding - btn_h, btn_w + 40, btn_h))]
+    elif fase == "ronda2":
+        buttons = [("Seguidilla 2", pygame.Rect(x + padding, y + h - padding - btn_h, btn_w, btn_h)),
+                   ("Seguidilla 1", pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h))]
+    elif fase == "ronda3":
+        spacing = (w - 3 * btn_w) // 4
+        buttons = [("Trio 1", pygame.Rect(x + spacing, y + h - padding - btn_h, btn_w, btn_h)),
+                   ("Trio 2", pygame.Rect(x + 2*spacing + btn_w, y + h - padding - btn_h, btn_w, btn_h)),
+                   ("Trio 3", pygame.Rect(x + 3*spacing + 2*btn_w, y + h - padding - btn_h, btn_w, btn_h))]
+    elif fase == "ronda4":
+        spacing = (w - 3 * btn_w) // 4
+        buttons = [("Trio 1", pygame.Rect(x + spacing, y + h - padding - btn_h, btn_w, btn_h)),
+                   ("Trio 2", pygame.Rect(x + 2*spacing + btn_w, y + h - padding - btn_h, btn_w, btn_h)),
+                   ("Seguidilla", pygame.Rect(x + 3*spacing + 2*btn_w, y + h - padding - btn_h, btn_w, btn_h))]
 
     while True:
         for ev in pygame.event.get():
@@ -474,37 +553,38 @@ def choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH):
                 return None
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = ev.pos
-                if btn_trio.collidepoint(mx, my):
-                    return "trio"
-                if btn_straight.collidepoint(mx, my):
-                    return "straight"
+                # clic en X -> cancelar
+                if close_btn_rect.collidepoint(mx, my):
+                    return None
+                for name, rect in buttons:
+                    if rect.collidepoint(mx, my):
+                        return name
 
         screen.blit(background_snapshot, (0, 0))
         screen.blit(overlay, (0, 0))
 
+        # modal
         pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
         pygame.draw.rect(screen, (150, 150, 150), modal_rect, 2, border_radius=12)
 
-        title = title_font.render("Donde deseas insertar", True, (230, 230, 230))
+        # título
+        title = title_font.render("¿Dónde deseas", True, (230, 230, 230))
         screen.blit(title, (x + padding, y + padding))
+        subtitle = title_font.render("insertar la carta?", True, (230, 230, 230))
+        screen.blit(subtitle, (x + padding, y + padding + 28))
 
-        title = title_font.render("la carta?", True, (230, 230, 230))
-        screen.blit(title, (x + padding, y + padding + 28))
+        # dibujar botón X
+        pygame.draw.rect(screen, (200, 60, 60), close_btn_rect, border_radius=6)
+        x_txt = title_font.render("X", True, (255, 255, 255))
+        xt = x_txt.get_rect(center=close_btn_rect.center)
+        screen.blit(x_txt, xt)
 
-        info = info_font.render("Selecciona el tipo de", True, (200, 200, 200))
-        screen.blit(info, (x + padding, y + padding + 56))
-
-        info = info_font.render("jugada destino", True, (200, 200, 200))
-        screen.blit(info, (x + padding, y + padding + 76))
-
-        draw_simple_button(screen, btn_trio, "Trio", info_font, bg=(40, 120, 40))
-        draw_simple_button(screen, btn_straight, "Seguidilla", info_font, bg=(40, 120, 40))
+        # botones de elección
+        for name, rect in buttons:
+            draw_simple_button(screen, rect, name, info_font, bg=(40, 120, 40))
 
         pygame.display.flip()
         clock.tick(60)
-
-
-
 
 #Pantallitas el infierno del Joker
 
@@ -1126,11 +1206,19 @@ def main(manager_de_red): # <-- Acepta el manager de red
     global siguiente_jugador_local
 
     global ronudOne, roundTwo   # Para prueba
+    # variables de espera / temporizador usadas en el loop (evitan UnboundLocalError)
+    global waiting, time_waiting, noBuy
+
 
     roundOne = True
     roundTwo = False
     roundThree = False
     roundFour = False
+    # inicializar flags de espera/temporizador
+    waiting = False
+    time_waiting = 0.0
+    noBuy = False
+# ...existing code..
 
     pygame.mixer.init()
     inicio_sound_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "inicio.wav")
@@ -1185,7 +1273,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
     cuadros_interactivos = {}
     cartas_ref = {}
 
-    zona_cartas = [[], [], []]  # [0]=Seguidilla, [1]=Trio/ Seguidilla2, [2]=Descarte
+    zona_cartas = [[], [], [], []]  # [0]=segunda casilla, [1]=primera casilla, [2]=tercera casilla o descarte  ///o cuando son 4 [0]=segunda casilla, [1]=primera casilla, [2]=tercera casilla, [3]=cuarta casilla o descarte
 
     # Crea un set para ids de cartas "congeladas"
     cartas_congeladas = set()
@@ -1304,6 +1392,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             zona_cartas[0].clear()
                             zona_cartas[1] = []
                             zona_cartas[1].clear()
+                            if roundThree or roundFour:
+                                zona_cartas[2] = []
+                                zona_cartas[2].clear()
                             for idx, carta in enumerate(visual_hand):
                                 if not hasattr(carta, "id_visual"):
                                     carta.id_visual = id(carta)  # O usa idx para algo más simple
@@ -1315,7 +1406,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             if roundOne:
                                 fase = "mostrar_orden"
                             elif roundTwo:
-                                fase = "ronda2"
+                                fase = "ronda2" 
+                            elif roundThree:
+                                fase = "ronda3"
+                            elif roundFour:
+                                fase = "ronda4"
                             
                 # Fin procesar Mensajes de INICIO----  Cargar Mazos, Mano, e isHand... PARA EL JUGADOR...       
 
@@ -1327,7 +1422,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     players[:] = playerOrder
                     players[0].isHand = True    # El primer jugador es mano
                     player1 = None
-                elif roundTwo:
+                elif roundTwo or roundThree or roundFour:
                     # Rotar la lista: el primero pasa al final
                     players.append(players.pop(0))
 
@@ -1366,7 +1461,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 
                 # PARA PRUEBA...
                 print(f" Mano del jugador... {jugador_local.playerHand}")
-                if roundOne:
+                '''if roundOne:
                     jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                 Card("5","♥"), Card("9","♦"), Card("9","♠"), 
                                                 Card("9","♠")]  # Solo una carta para prueba
@@ -1377,14 +1472,27 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                 Card("5","♥"),
                                                 Card("2","♠"), Card("3","♠"), Card("4","♠"), 
                                                 Card("5","♠")]  # Solo una carta para prueba
+                    round.hands[jugador_local.playerId] = jugador_local.playerHand'''
+                # --------------''''
+                '''if roundThree:
+                    jugador_local.playerHand = [Card("9","♥"), Card("9","♠"), Card("9","♦"), 
+                                                Card("8","♥"), Card("8","♠"), Card("8","♦"), 
+                                                Card("7","♥"),Card("7","♦"),Card("7","♠")]  # Solo una carta para prueba
                     round.hands[jugador_local.playerId] = jugador_local.playerHand
-                # --------------
-                
+                if roundFour:
+                    jugador_local.playerHand = [Card("9","♥"), Card("9","♠"), Card("9","♦"), 
+                                                Card("8","♥"), Card("8","♠"), Card("8","♦"), 
+                                                Card("2","♥"), Card("3","♥"), Card("4","♥"), 
+                                                Card("5","♥")]  # Solo una carta para prueba
+                    round.hands[jugador_local.playerId] = jugador_local.playerHand'''
                 # Limpiar zonas de cartas para todas las rondas
                 zona_cartas[0] = []
                 zona_cartas[0].clear()
                 zona_cartas[1] = []
                 zona_cartas[1].clear()
+                if roundThree or roundFour:
+                    zona_cartas[2] = []
+                    zona_cartas[2].clear()
 
                 msgOrden = {
                     "type": "PLAYER_ORDER",
@@ -1403,6 +1511,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     fase = "mostrar_orden"
                 elif roundTwo:
                     fase = "ronda2"
+                elif roundThree:
+                    fase = "ronda3"
+                elif roundFour:
+                    fase = "ronda4"
 
                 print(f" fase del juego>>> Ronda en realidad :)   {fase}")
 
@@ -1438,6 +1550,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         p.playerHand = mano_restante
                         p.jugadas_bajadas = jugadas_en_mesa
                         p.playMade = Jugadas_en_mesa2
+                        try:
+                            bajarse_sound.play()
+                        except Exception as e:
+                            print("Error al reproducir bajarse_sound:", e)
             
             elif isinstance(msg,dict) and msg.get("type")=="TOMAR_DESCARTE":
                 player_id_que_tomoD = msg.get("playerId")
@@ -1599,6 +1715,23 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                 mensaje_temporal = f"{player_name_que_compro} compro la carta."
                 mensaje_tiempo = time.time()
+            
+            elif isinstance(msg, dict) and msg.get("type") == "INSERTAR_CARTA":
+                mano_restante = msg.get("playerHand")
+                jugadas_visuales = msg.get("jugadas_bajadas")
+                jugadas_logicas = msg.get("playMade")
+                id_target_player = msg.get("playerId")
+                id_jugador_que_inserto = msg.get("playerId2")
+                received_round = msg.get("round")
+
+                for p in players:
+                    if p.playerId == id_target_player:
+                        p.jugadas_bajadas = jugadas_visuales
+                        p.playMade = jugadas_logicas
+                    if p.playerId == id_jugador_que_inserto:
+                        p.playerHand = mano_restante
+
+
                 
         # Fin procesar mensajes del juego...
         ###### SIgo aqui...
@@ -1631,6 +1764,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         drag_rect = cuadros_interactivos[nombre]
                         drag_offset_x = event.pos[0] - drag_rect.x
                         dragging = True
+                        # Reproducir sonido al iniciar el arrastre
+                        try:
+                            carta_sound.play()
+                        except Exception as e:
+                            # Si falla la reproducción, no interrumpe el juego; registra en consola.
+                            print("Error al reproducir carta_sound:", e)
 
 
 
@@ -1779,113 +1918,169 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         resultado3 = []
                         if jugador_local.cardDrawn:
                             if roundOne:
-                                resultado = jugador_local.getOff(zona_cartas[0], zona_cartas[1])
+                                resultado1 = jugador_local.isValidStraightF(zona_cartas[0])
+                                resultado2 = jugador_local.isValidTrioF(zona_cartas[1])
                             elif roundTwo:
-                                resultado = jugador_local.getOff2(zona_cartas[0], zona_cartas[1])
-                                print(f"Resultado de getOff2 {resultado}")
-                                #TrioRoundTwo = [Card("9","♦"), Card("9","♠"),Card("9","♠")] 
-                                #TrioRoundTwo2 = TrioRoundTwo.copy()
-                    
-                                #for c in TrioRoundTwo:
-                                #    jugador_local.playerHand.append(c) # Anexando Trio para usar getOff
-                                #resultado1 = jugador_local.getOff(zona_cartas[0], TrioRoundTwo)   # Solo valida la seguidilla Zona[0]
-                                
-                                #if resultado1:
-                                #    jugador_local.downHand = False  # Para volver a usar el getOff
-                                # 
-                                # for c in TrioRoundTwo2:
-                                #     jugador_local.playerHand.append(c) # Anexando Trio para usar getOff
-                                # resultado2 = jugador_local.getOff(zona_cartas[1], TrioRoundTwo2)   # Solo valida la seguidilla Zona[1]
+                                resultado1 = jugador_local.isValidStraightF(zona_cartas[0])
+                                resultado2 = jugador_local.isValidStraightF(zona_cartas[1])
 
                             elif roundThree:
                                 #resultado = jugador_local.getOff2(zona_cartas[0], zona_cartas[1])
-                                SeguidillaRoundThree = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
+                                resultado1 = jugador_local.isValidTrioF(zona_cartas[1])
+                                resultado2 = jugador_local.isValidTrioF(zona_cartas[0])
+                                resultado3 = jugador_local.isValidTrioF(zona_cartas[2])
+                            elif roundFour:
+                                resultado1 = jugador_local.isValidTrioF(zona_cartas[1])
+                                resultado2 = jugador_local.isValidTrioF(zona_cartas[0])
+                                resultado3 = jugador_local.isValidStraightF(zona_cartas[2])
+                                '''SeguidillaRoundFour = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                         Card("5","♥")]
-                                SeguidillaRoundThree2 = SeguidillaRoundThree.copy()
-                                SeguidillaRoundThree3 = SeguidillaRoundThree.copy()
+                                SeguidillaRoundFour2 = SeguidillaRoundFour.copy()
+                                TrioRoundFour = [Card("2","♦"), Card("2","♠"),Card("2","♠")] 
 
-                                for c in SeguidillaRoundThree:
-                                    jugador_local.playerHand.append(c) # Anexando Trio para usar getOff
+                                for c in SeguidillaRoundFour:
+                                    jugador_local.playerHand.append(c) # Anexando Seguidilla para usar getOff
                                 # Esperar nuevas zonas de cartas
-                                resultado1 = []# jugador_local.getOff(zona_cartas[0], TrioRoundTwo)   # Solo valida la seguidilla Zona[0]
-                                
+                                print(f"zona[1]{zona_cartas[1]}")
+                                resultado1 = jugador_local.getOff(SeguidillaRoundFour,zona_cartas[1])   # Solo valida la seguidilla Zona[0]
+                                print(f"resultado1 {resultado1}")
                                 if resultado1:
                                     jugador_local.downHand = False  # Para volver a usar el getOff
+                                else: ##############
+                                    for c in SeguidillaRoundFour:
+                                        jugador_local.playerHand.remove(c)
                                 
-                                for c in SeguidillaRoundThree2:
+                                for c in SeguidillaRoundFour2:
                                     jugador_local.playerHand.append(c) # Anexando Trio para usar getOff
-                                resultado2 = []# jugador_local.getOff(zona_cartas[1], TrioRoundTwo2)   # Solo valida la seguidilla Zona[1]        
-                                
+                                print(f"zona[0]{zona_cartas[0]}")
+                                resultado2 = jugador_local.getOff(SeguidillaRoundFour2,zona_cartas[0])   # Solo valida la seguidilla Zona[1]        
+                                print(f"resultado2 {resultado2}")
                                 if resultado2:
                                     jugador_local.downHand = False  # Para volver a usar el getOff
-                                
-                                for c in SeguidillaRoundThree3:
+                                else:
+                                    for c in SeguidillaRoundFour2:
+                                        jugador_local.playerHand.remove(c) # Anexando Trio para usar getOff
+                                for c in TrioRoundFour:
                                     jugador_local.playerHand.append(c) # Anexando Trio para usar getOff
-                                resultado3 = []# jugador_local.getOff(zona_cartas[1], TrioRoundTwo2)   # Solo valida la seguidilla Zona[1]        
-                            
-                            cartas_ocultas.clear()
-                            if resultado and roundOne:  #Para la primera ronda 
+                                print(f"zona[2]{zona_cartas[2]}")
+                                resultado3 = jugador_local.getOff( zona_cartas[2],TrioRoundFour)   # Solo valida la seguidilla Zona[1] 
+                                print(f"resultado3 {resultado3}")       
+                                if not resultado3:
+                                    for c in TrioRoundFour:
+                                        jugador_local.playerHand.remove(c) # Anexando Trio para usar getOff
+                            cartas_ocultas.clear()'''
+                            if resultado1 and resultado2 and roundOne:  #Para la primera ronda 
                                 send = True
-                                trios_bajados, seguidillas_bajadas = resultado
+                                #trios_bajados, seguidillas_bajadas = resultado
                                 # Guarda las jugadas bajadas en jugador_local.jugadas_bajadas
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if trios_bajados:
-                                    jugador_local.jugadas_bajadas.append(list(trios_bajados))
-                                if seguidillas_bajadas:
-                                    jugador_local.jugadas_bajadas.append(list(seguidillas_bajadas))
-                                for carta in trios_bajados + seguidillas_bajadas:
+                                if resultado1:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                if resultado2:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                for carta in zona_cartas[0]+ zona_cartas[1]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
+                                        jugador_local.playerHand.remove(carta)
+                                jugador_local.playMade.append(zona_cartas[0])
+                                jugador_local.playMade.append(zona_cartas[1])
+                                jugador_local.downHand =True
+                                cartas_ocultas.clear()
+                                zona_cartas[0] = []
+                                zona_cartas[0].clear()
+                                zona_cartas[1] = []
+                                zona_cartas[1].clear()
+                                #Eliminamos las cartas de los espacios visuales, para que desaparezcan al pulsar el botón de bajarse
                             
-                            elif resultado and roundTwo:
+                            elif resultado1 and resultado2 and roundTwo:
                             #elif resultado1 and resultado2 and roundTwo:  #Para la segunda ronda 
                                 send = True
-                                seguidillas_bajadas, seguidillas2_bajadas = resultado
+                                #seguidillas_bajadas, seguidillas2_bajadas = resultado
                                 #NoUsar , seguidillas_bajadas = resultado1
                                 #NoUsar , seguidillas2_bajadas = resultado2 
                                 
                                 # Guarda las jugadas bajadas en jugador_local.jugadas_bajadas
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if seguidillas_bajadas:
-                                    jugador_local.jugadas_bajadas.append(list(seguidillas_bajadas))
-                                if seguidillas2_bajadas:
-                                    jugador_local.jugadas_bajadas.append(list(seguidillas2_bajadas))
-                                jugador_local.playMade = []
-                                jugador_local.playMade = list({"trio": seguidillas2_bajadas, "straight": seguidillas_bajadas})
-                                for carta in seguidillas_bajadas + seguidillas2_bajadas:
+                                if resultado1:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                if resultado2:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                for carta in zona_cartas[0]+ zona_cartas[1]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
+                                        jugador_local.playerHand.remove(carta)
+                                jugador_local.playMade.append(zona_cartas[0])
+                                jugador_local.playMade.append(zona_cartas[1])
+                                jugador_local.downHand =True
+                                cartas_ocultas.clear()
+                                zona_cartas[0] = []
+                                zona_cartas[0].clear()
+                                zona_cartas[1] = []
+                                zona_cartas[1].clear()
                             
                             elif resultado1 and resultado2 and resultado3 and roundThree:  #Para la tercera ronda 
                                 send = True
-                                trios_bajados, NoUsar = resultado1
-                                trios2_bajados, NoUsar = resultado2
-                                trios3_bajados, NoUsar = resultado3
-                                
-                                # Guarda las jugadas bajadas en jugador_local.jugadas_bajadas
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if trios_bajados:
-                                    jugador_local.jugadas_bajadas.append(list(trios_bajados))
-                                if trios2_bajados:
-                                    jugador_local.jugadas_bajadas.append(list(trios2_bajados))
-                                if trios3_bajados:
-                                    jugador_local.jugadas_bajadas.append(list(trios3_bajados))
-                                
-                                jugador_local.playMade = []
-                                # Esperar nueva zona... "trio", "straight", "?????"
-                                #jugador_local.playMade = list({"trio": seguidillas2_bajadas, "straight": seguidillas_bajadas})
-                                for carta in trios_bajados + trios2_bajados + trios3_bajados:
+                                if resultado1:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                if resultado2:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                if resultado3:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[2])
+                                for carta in zona_cartas[1]+ zona_cartas[0] + zona_cartas[2]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
+                                        jugador_local.playerHand.remove(carta)
+                                jugador_local.playMade.append(zona_cartas[1])
+                                jugador_local.playMade.append(zona_cartas[0])
+                                jugador_local.playMade.append(zona_cartas[2])
+                                jugador_local.downHand =True
+                                cartas_ocultas.clear()
+                                zona_cartas[0] = []
+                                zona_cartas[0].clear()
+                                zona_cartas[1] = []
+                                zona_cartas[1].clear()
+                                zona_cartas[2] = []
+                                zona_cartas[2].clear()
+                                
+                                
+                            elif resultado1 and resultado2 and resultado3 and roundFour and (len(zona_cartas[0])+len(zona_cartas[1])+len(zona_cartas[2]))==len(jugador_local.playerHand): 
+                                send = True
+                                if not hasattr(jugador_local, "jugadas_bajadas"):
+                                    jugador_local.jugadas_bajadas = []
+                                if resultado1:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                if resultado2:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                if resultado3:
+                                    jugador_local.jugadas_bajadas.append(zona_cartas[2])
+                                for carta in zona_cartas[1]+ zona_cartas[0] + zona_cartas[2]:
+                                    if carta in visual_hand:
+                                        visual_hand.remove(carta)
+                                        jugador_local.playerHand.remove(carta)
+                                jugador_local.playMade.append(zona_cartas[1])
+                                jugador_local.playMade.append(zona_cartas[0])
+                                jugador_local.playMade.append(zona_cartas[2])
+                                jugador_local.downHand =True
+                                cartas_ocultas.clear()
+                                zona_cartas[0] = []
+                                zona_cartas[0].clear()
+                                zona_cartas[1] = []
+                                zona_cartas[1].clear()
+                                zona_cartas[2] = []
+                                zona_cartas[2].clear()
                             else:
                                 cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
                                 zona_cartas[1] = []
                                 zona_cartas[1].clear()
+                                if roundThree or roundFour:
+                                    zona_cartas[2] = []
+                                    zona_cartas[2].clear()
                             # Actualiza visual_hand y permite organizar
                             visual_hand.clear()
                             for carta in jugador_local.playerHand:
@@ -1920,17 +2115,24 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             zona_cartas[0].clear()
                             zona_cartas[1] = []
                             zona_cartas[1].clear()
-                    elif nombre == "Descarte":
+                            if roundThree or roundFour:
+                                    zona_cartas[2] = []
+                                    zona_cartas[2].clear()
+                    elif nombre in ("Descarte", "Descartar"):
                             # Determinar la carta seleccionada (click sobre Carta_x) o usar la zona de arrastre (zona_cartas[2])
                             selected_card = None
                             for key, rect in cuadros_interactivos.items():
                                 if key.startswith("Carta_") and rect.collidepoint(event.pos):
                                     selected_card = cartas_ref.get(key)
                                     break
-
-                            if zona_cartas[2]:
+                            numero = 0
+                            if roundOne or roundTwo:
+                                numero = 2
+                            elif roundThree or roundFour:
+                                numero = 3
+                            if zona_cartas[numero]:
                                 # si hay cartas arrastradas al área de descarte, úsalas
-                                selected_cards = list(zona_cartas[2])
+                                selected_cards = list(zona_cartas[numero])
                             elif selected_card is not None:
                                 selected_cards = [selected_card]
                             else:
@@ -1946,7 +2148,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 mensaje_temporal = "No se pudo descartar esa(s) carta(s)."
                                 mensaje_tiempo = time.time()
                                 cartas_ocultas.clear()
-                                zona_cartas[2] = []
+                                zona_cartas[numero] = []
                                 continue
 
                             # Validaciones de turno y regla "no descartar carta tomada este turno"
@@ -1958,7 +2160,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     if c not in jugador_local.playerHand:
                                         jugador_local.playerHand.append(c)
                                 cartas_ocultas.clear()
-                                zona_cartas[2] = []
+                                zona_cartas[numero] = []
                             elif not can_discard(jugador_local, cartas_descartadas):
                                 mensaje_temporal = "No puedes descartar la carta que acabas de tomar."
                                 mensaje_tiempo = time.time()
@@ -1967,7 +2169,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     if c not in jugador_local.playerHand:
                                         jugador_local.playerHand.append(c)
                                 cartas_ocultas.clear()
-                                zona_cartas[2] = []
+                                zona_cartas[numero] = []
                                 # jugador_local.isHand = True
                             elif jugador_local.isHand and jugador_local.canDiscard:
                                 # descarte válido: sincronizar vistas y limpiar bloqueo
@@ -1983,6 +2185,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                 organizar_habilitado = True
                                 jugador_local.cardDrawn = False
+                                cartas_ocultas.clear()
+
                                 # Guarda la carta descartada en el mazo de descarte
                                 for carta in cartas_descartadas:
                                     if len(cartas_descartadas) == 2 and hasattr(cartas_descartadas[1], "joker") and cartas_descartadas[1].joker:
@@ -1992,7 +2196,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     else:
                                         #mazo_descarte.append(carta)
                                         mazo_descarte = round.discards  #Luego de reiniciado el mazo, se duplicaron las cartas
-                                zona_cartas[2] = []
+                                zona_cartas[numero] = []
                                 #print(f"Mano del jugador: {[str(c) for c in jugador_local.playerHand]}")
                                 #print(f"Prueba de isHand ANTES: {[p.isHand for p in players]}")
                                 for idx, p in enumerate(players):
@@ -2199,108 +2403,218 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             drop_bajada = nombre_box
                             break
 
-                    # Helper: obtener jugador objetivo a partir de "bajN"
+                    # Resolver jugador objetivo consultando el mapeo baj_box_to_player (construido arriba)
                     def player_for_bajada(baj_name):
+                        if not baj_name:
+                            return None, None
+                        target_player = baj_box_to_player.get(baj_name)
+                        if target_player:
+                            try:
+                                idx = players.index(target_player)
+                                return target_player, idx
+                            except ValueError:
+                                return target_player, None
+                        # fallback por índice si no está en el mapa
                         try:
                             idx = int(baj_name[3:]) - 1
+                            if 0 <= idx < len(players):
+                                return players[idx], idx
                         except Exception:
-                            return None
-                        if 0 <= idx < len(players):
-                            return players[idx], idx
+                            pass
                         return None, None
+
 
                     # Normalizar carta a objeto Card
                     carta_obj = string_to_card(carta_arrastrada)
+                    send = False
 
                     if drop_bajada:
-                        # Mostrar modal: Trio / Seguidilla
-                        eleccion = choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
+                        eleccion = choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, fase)
                         if eleccion is None:
-                            mensaje_temporal = "Inserción cancelada."
+                            mensaje_temporal = ""
                             mensaje_tiempo = time.time()
-                        elif eleccion == "trio":
-                            # Abrir modal de trio y luego intentar insert si el usuario confirma
-                            tr_accion = trio_choice_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
-                            target_player, target_idx = player_for_bajada(drop_bajada)
-                            if not target_player:
-                                mensaje_temporal = "Jugador objetivo no encontrado."
-                                mensaje_tiempo = time.time()
-                            else:
-                                if tr_accion == "insert_trio":
-                                    ok = safe_insert_card(jugador_local, target_player, max(0, (len(getattr(target_player, "playMade", [])) - 1)), carta_obj, "end")
-                                    if ok:
-                                        if carta_arrastrada in visual_hand:
-                                            visual_hand.remove(carta_arrastrada)
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                        mensaje_temporal = "Carta insertada en Trío."
-                                    else:
-                                        mensaje_temporal = "No se pudo insertar en Trío. Revisa consola."
-                                    mensaje_tiempo = time.time()
-                                elif tr_accion == "replace_joker":
-                                    ok = safe_insert_card(jugador_local, target_player, max(0, (len(getattr(target_player, "playMade", [])) - 1)), carta_obj, None)
-                                    if ok:
-                                        if carta_arrastrada in visual_hand:
-                                            visual_hand.remove(carta_arrastrada)
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                        mensaje_temporal = "Sustitución de Joker en Trío realizada."
-                                    else:
-                                        mensaje_temporal = "No se pudo sustituir Joker en Trío. Revisa consola."
-                                    mensaje_tiempo = time.time()
-                                else:
-                                    mensaje_temporal = "Operación Trío cancelada."
-                                    mensaje_tiempo = time.time()
-
-                        elif eleccion == "straight":
-                            # Abrir modal seguidilla (Inicio / Final / Sustituir Joker) y ejecutar safe_insert_card según elección
-                            straight_accion = straight_choice_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
-                            target_player, target_idx = player_for_bajada(drop_bajada)
-                            if not target_player:
-                                mensaje_temporal = "Jugador objetivo no encontrado."
-                                mensaje_tiempo = time.time()
-                            else:
-                                # elegir índice de jugada objetivo: por defecto la última jugada (más reciente)
-                                plays = getattr(target_player, "playMade", [])
-                                if plays:
-                                    play_index = len(plays) - 1
-                                else:
-                                    play_index = 0
-                                if straight_accion == "start":
-                                    ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "start")
-                                    if ok:
-                                        if carta_arrastrada in visual_hand:
-                                            visual_hand.remove(carta_arrastrada)
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                        mensaje_temporal = "Insertado al Inicio de la seguidilla."
-                                    else:
-                                        mensaje_temporal = "No se pudo insertar al Inicio. Revisa consola."
-                                    mensaje_tiempo = time.time()
-                                elif straight_accion == "end":
-                                    ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "end")
-                                    if ok:
-                                        if carta_arrastrada in visual_hand:
-                                            visual_hand.remove(carta_arrastrada)
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                        mensaje_temporal = "Insertado al Final de la seguidilla."
-                                    else:
-                                        mensaje_temporal = "No se pudo insertar al Final. Revisa consola."
-                                    mensaje_tiempo = time.time()
-                                elif straight_accion == "replace_joker":
-                                    ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, None)
-                                    if ok:
-                                        if carta_arrastrada in visual_hand:
-                                            visual_hand.remove(carta_arrastrada)
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                        mensaje_temporal = "Sustitución de Joker en seguidilla realizada."
-                                    else:
-                                        mensaje_temporal = "No se pudo sustituir Joker en seguidilla. Revisa consola."
-                                    mensaje_tiempo = time.time()
-                                else:
-                                    mensaje_temporal = "Operación Seguidilla cancelada."
-                                    mensaje_tiempo = time.time()
                         else:
-                            mensaje_temporal = "Opción no reconocida."
-                            mensaje_tiempo = time.time()
+                            target_player, target_idx = player_for_bajada(drop_bajada)
+                            if not target_player:
+                                mensaje_temporal = "Jugador objetivo no encontrado."
+                                mensaje_tiempo = time.time()
+                            else:
+                                # --- TRIOS ---
+                                if "Trio" in eleccion:  # cualquier trio seleccionado
+                                    target_subtype = "trio"
+                                    # elegir índice según el número de trío seleccionado y la ronda
+                                    plays = getattr(target_player, "playMade", [])
+                                    if plays:
+                                        if fase == "ronda3":
+                                            if eleccion == "Trio 1":
+                                                play_index = 0
+                                            elif eleccion == "Trio 2":
+                                                play_index = 1
+                                            elif eleccion == "Trio 3":
+                                                play_index = 2
+                                        elif fase == "ronda4":
+                                            if eleccion == "Trio 1":
+                                                play_index = 0
+                                            elif eleccion == "Trio 2":
+                                                play_index = 1
+                                        else:
+                                            play_index = len(plays) - 1
+                                    else:
+                                        play_index = 0
 
+                                    ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "end", target_subtype)
+                                    if ok:
+                                        send = True
+                                        #if carta_arrastrada in visual_hand:
+                                        #   visual_hand.remove(carta_arrastrada)
+                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                                        mensaje_temporal = f"Carta insertada en {eleccion}."
+                                        msgInsertar = {
+                                        "type":"INSERTAR_CARTA",
+                                        "playerHand": jugador_local.playerHand,
+                                        "jugadas_bajadas": target_player.jugadas_bajadas,
+                                        "playMade": target_player.playMade,
+                                        "playerId": target_player.playerId,
+                                        "playerId2": jugador_local.playerId,
+                                        "round": round
+                                        }
+                                        if network_manager.is_host:
+                                            if msgInsertar and send:
+                                                network_manager.broadcast_message(msgInsertar)
+                                            else: 
+                                                print("Mensaje vacio... No enviado")
+                                        else:
+                                            if msgInsertar and send:
+                                                network_manager.sendData(msgInsertar)
+                                            else: 
+                                                print("Mensaje vacio... No enviado")
+                                    else:
+                                        mensaje_temporal = f"No se pudo insertar en {eleccion}. Revisa consola."
+                                    mensaje_tiempo = time.time()
+
+                                # --- SEGUIDILLAS ---
+                                elif "Seguidilla" in eleccion:
+                                    target_subtype = "straight"
+                                    straight_accion = straight_choice_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
+                                    
+                                    plays = getattr(target_player, "playMade", [])
+                                    # elegir índice según la seguidilla seleccionada (si hay más de una)
+                                    if plays:
+                                        if fase == "ronda2" and eleccion == "Seguidilla 1":
+                                            play_index = 1
+                                        elif fase == "ronda2" and eleccion == "Seguidilla 2":
+                                            play_index = 0
+                                        elif fase == "ronda1":
+                                            play_index = 0
+                                        else:
+                                            play_index = len(plays) - 1
+                                    else:
+                                        play_index = 0
+
+                                    if straight_accion == "start":
+                                        ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "start", target_subtype)
+                                        if ok:
+                                            send = True
+                                            if carta_arrastrada in visual_hand:
+                                                visual_hand.remove(carta_arrastrada)
+                                            reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "Insertado al Inicio de la seguidilla."
+                                            msgInsertar = {
+                                            "type":"INSERTAR_CARTA",
+                                            "playerHand": jugador_local.playerHand,
+                                            "jugadas_bajadas": target_player.jugadas_bajadas,
+                                            "playMade": target_player.playMade,
+                                            "playerId": target_player.playerId,
+                                            "playerId2": jugador_local.playerId,
+                                            "round": round
+                                            }
+                                            if network_manager.is_host:
+                                                if msgInsertar and send:
+                                                    network_manager.broadcast_message(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                            else:
+                                                if msgInsertar and send:
+                                                    network_manager.sendData(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                        else:
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "No se pudo insertar al Inicio. Revisa consola."
+                                    elif straight_accion == "end":
+                                        ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "end", target_subtype)
+                                        if ok:
+                                            send = True
+                                            if carta_arrastrada in visual_hand:
+                                                visual_hand.remove(carta_arrastrada)
+                                            reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "Insertado al Final de la seguidilla."
+                                            msgInsertar = {
+                                            "type":"INSERTAR_CARTA",
+                                            "playerHand": jugador_local.playerHand,
+                                            "jugadas_bajadas": target_player.jugadas_bajadas,
+                                            "playMade": target_player.playMade,
+                                            "playerId": target_player.playerId,
+                                            "playerId2": jugador_local.playerId,
+                                            "round": round
+                                            }
+                                            if network_manager.is_host:
+                                                if msgInsertar and send:
+                                                    network_manager.broadcast_message(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                            else:
+                                                if msgInsertar and send:
+                                                    network_manager.sendData(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                        else:
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "No se pudo insertar al Final. Revisa consola."
+                                    elif straight_accion == "replace_joker":
+                                        ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, None, target_subtype)
+                                        if ok:
+                                            send = True
+                                            if carta_arrastrada in visual_hand:
+                                                visual_hand.remove(carta_arrastrada)
+                                            reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "Sustitución de Joker en seguidilla realizada."
+                                            msgInsertar = {
+                                            "type":"INSERTAR_CARTA",
+                                            "playerHand": jugador_local.playerHand,
+                                            "jugadas_bajadas": target_player.jugadas_bajadas,
+                                            "playMade": target_player.playMade,
+                                            "playerId": target_player.playerId,
+                                            "playerId2": jugador_local.playerId,
+                                            "round": round
+                                            }
+                                            if network_manager.is_host:
+                                                if msgInsertar and send:
+                                                    network_manager.broadcast_message(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                            else:
+                                                if msgInsertar and send:
+                                                    network_manager.sendData(msgInsertar)
+                                                else: 
+                                                    print("Mensaje vacio... No enviado")
+                                        else:
+                                            mensaje_tiempo = time.time()
+                                            mensaje_temporal = "No se pudo sustituir el Joker. Revisa consola."
+                                    else:
+                                        mensaje_tiempo = time.time()
+                                        mensaje_temporal = "Operación Seguidilla cancelada."
+                                        ok = False
+
+                                    if ok:
+                                        #if carta_arrastrada in visual_hand:
+                                         #   visual_hand.remove(carta_arrastrada)
+                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+
+                                    mensaje_tiempo = time.time()
                         # No tocar zona_cartas ni cartas_ocultas aquí; safe_insert_card ya maneja lógica real
                     else:
                         # Mantener la lógica previa para mesa/insert en jugadas (sin cambios)
@@ -2402,36 +2716,53 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                         # 3) Si no se insertó en jugada, chequear zonas Trio/Seguidilla/Descarte centrales
                         if not insertado_en_jugada:
-                            if trio_rect and trio_rect.collidepoint(mouse_x, mouse_y):
-                                zona_cartas[1].append(carta_arrastrada)
+                            # PRIORIDAD: zona central interactiva (cuadro que creaste)
+                            zona_central = cuadros_interactivos.get("ZonaCentralInteractiva")
+                            if zona_central and zona_central.collidepoint(mouse_x, mouse_y):
+                                # asegurar al menos 4 ranuras
+                                while len(zona_cartas) < 4:
+                                    zona_cartas.append([])
+                                zona_cartas[-1].append(carta_arrastrada)
                                 if carta_arrastrada in visual_hand:
                                     cartas_ocultas.add(visual_hand.index(carta_arrastrada))
                                 organizar_habilitado = False
-                            elif seguidilla_rect and seguidilla_rect.collidepoint(mouse_x, mouse_y):
-                                zona_cartas[0].append(carta_arrastrada)
-                                if carta_arrastrada in visual_hand:
-                                    cartas_ocultas.add(visual_hand.index(carta_arrastrada))
-                                organizar_habilitado = False
-                            elif descarte_rect and descarte_rect.collidepoint(mouse_x, mouse_y):
-                                zona_cartas[2].append(carta_arrastrada)
-                                if carta_arrastrada in visual_hand:
-                                    cartas_ocultas.add(visual_hand.index(carta_arrastrada))
-                                organizar_habilitado = False
-                            elif nueva_pos is not None and organizar_habilitado:
-                                if carta_arrastrada in visual_hand:
-                                    visual_hand.remove(carta_arrastrada)
-                                if mouse_x < cuadros_interactivos[f"Carta_{nueva_pos}"].centerx:
-                                    visual_hand.insert(nueva_pos, carta_arrastrada)
-                                else:
-                                    visual_hand.insert(nueva_pos + 1, carta_arrastrada)
-                            elif nueva_pos is not None and not organizar_habilitado:
-                                mensaje_temporal = "No puedes organizar una carta mientras ejecutas una jugada."
-                                mensaje_tiempo = time.time()
+                                print("DEBUG after drop -> zona_cartas (zona central):", [[str(c) for c in z] for z in zona_cartas])
+                            else:
+                                if trio_rect and trio_rect.collidepoint(mouse_x, mouse_y):
+                                    zona_cartas[1].append(carta_arrastrada)
+                                    if carta_arrastrada in visual_hand:
+                                        cartas_ocultas.add(visual_hand.index(carta_arrastrada))
+                                    organizar_habilitado = False
+                                elif seguidilla_rect and seguidilla_rect.collidepoint(mouse_x, mouse_y):
+                                    zona_cartas[0].append(carta_arrastrada)
+                                    if carta_arrastrada in visual_hand:
+                                        cartas_ocultas.add(visual_hand.index(carta_arrastrada))
+                                    organizar_habilitado = False
+                                elif descarte_rect and descarte_rect.collidepoint(mouse_x, mouse_y):
+                                    zona_cartas[2].append(carta_arrastrada)
+                                    if carta_arrastrada in visual_hand:
+                                        cartas_ocultas.add(visual_hand.index(carta_arrastrada))
+                                    organizar_habilitado = False
+                                elif nueva_pos is not None and organizar_habilitado:
+                                    if carta_arrastrada in visual_hand:
+                                        visual_hand.remove(carta_arrastrada)
+                                    if mouse_x < cuadros_interactivos[f"Carta_{nueva_pos}"].centerx:
+                                        visual_hand.insert(nueva_pos, carta_arrastrada)
+                                    else:
+                                        visual_hand.insert(nueva_pos + 1, carta_arrastrada)
+                                elif nueva_pos is not None and not organizar_habilitado:
+                                        mensaje_temporal = "No puedes organizar una carta mientras ejecutas una jugada."
+                                        mensaje_tiempo = time.time()
+                                
 
                 # siempre limpiar arrastre
                 dragging = False
                 carta_arrastrada = None
                 drag_rect = None
+                try:
+                    print("DEBUG drag end -> zona_cartas:", [[str(c) for c in z] for z in zona_cartas])
+                except Exception:
+                    print("DEBUG drag end -> zona_cartas (raw):", zona_cartas)
             elif event.type == pygame.MOUSEMOTION and dragging:
                 pass  # El dibujo se maneja abajo
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Click derecho
@@ -2439,7 +2770,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     for carta in zona:
                         if carta not in visual_hand:
                             visual_hand.append(carta)
-                zona_cartas = [[], [], []]
+                zona_cartas = [[], [], [],[]]
                 cartas_ocultas.clear()
                 organizar_habilitado = True  # Vuelve a habilitar organización
         # Fin evento de pygame...
@@ -2480,7 +2811,14 @@ def main(manager_de_red): # <-- Acepta el manager de red
             visual_hand = [c for c in visual_hand if c in jugador_local.playerHand and c not in cartas_apartadas]
 
         # Dibujar fondo
-        screen.blit(fondo_img, (0, 0))
+        #screen.blit(fondo_img, (0, 0))
+
+        # Fondo Joker temporal
+        if mostrar_joker_fondo and pygame.time.get_ticks() - tiempo_joker_fondo < 3000:
+            screen.blit(joker_fondo_img, (0, 0))
+        else:
+            mostrar_joker_fondo = False
+            screen.blit(fondo_img, (0, 0))
 
         # Cálculo de tamaños relativos
         bajada_h = int(HEIGHT * bajada_h_pct)
@@ -2617,9 +2955,33 @@ def main(manager_de_red): # <-- Acepta el manager de red
         cuadro_w_carta = 120
         cuadro_h_carta = 188
         total_width = cuadro_w_fino * 3 + cuadro_w_carta * 2 + margin * 4
-        start_x = mesa_x + (mesa_w - total_width) // 2
-        cuadro_y = mesa_y + (mesa_h - cuadro_h) // 2
+        start_x = (WIDTH - total_width) // 2 - 30
+        cuadro_y = (HEIGHT - cuadro_h) // 2
 
+        # Usar exactamente el mismo tamaño que las casillas (cuadro_w_carta, cuadro_h_carta)
+        card_w = cuadro_w_carta
+        card_h = cuadro_h_carta
+        # Ajusta este valor para mover más/menos a la derecha
+        despl_x = 120
+        # Crear rect central del mismo tamaño que una casilla (sin overlay visible)
+        # Habilitar la zona central SOLO en Ronda 3 o Ronda 4
+        enabled_zone = False
+        if 'roundThree' in globals() or 'roundFour' in globals():
+            enabled_zone = bool(globals().get('roundThree')) or bool(globals().get('roundFour'))
+        else:
+            enabled_zone = (globals().get('fase') in ("ronda3", "ronda4"))
+
+        if enabled_zone:
+            zona_central_rect = pygame.Rect(
+                start_x + (total_width - cuadro_w_carta) // 2 + despl_x,
+                cuadro_y + (cuadro_h - cuadro_h_carta) // 2,
+                cuadro_w_carta,
+                cuadro_h_carta
+            )
+            cuadros_interactivos["ZonaCentralInteractiva"] = zona_central_rect
+        else:
+            # asegurar que no quede definida si no está habilitada
+            cuadros_interactivos.pop("ZonaCentralInteractiva", None)
         # Calcula las posiciones X de cada cuadro central
         x_trio = start_x
         x_seguidilla = x_trio + cuadro_w_fino + margin
@@ -2699,6 +3061,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
             combinaciones_requeridas = ["Trio", "Seguidilla"]
         if fase == "ronda2":
             combinaciones_requeridas = ["Seguidilla", "Seguidilla"]
+        if fase == "ronda3":
+            combinaciones_requeridas = ["Trio","Trio","Trio"]
+        if fase == "ronda4":
+            combinaciones_requeridas = ["Trio","Trio", "Seguidilla"]
 
         textos = combinaciones_requeridas + ["Descarte", "Tomar descarte", "Tomar carta"]
         x = start_x
@@ -2839,66 +3205,69 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # Ejemplo para 2 a 7 jugadores (ajusta según tu layout)
         jugadores_laterales = []
         jugadores_superiores = []
+        # --- Izquierda (Jugadores 2 y 3) ---
+        # --- Derecha (Jugadores 6 y 7) ---
+        # --- Arriba (Jugadores 4 y 5) ---
 
-        if len(players) >= 2:
+        if len(players) == 2:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
             elif jugador_local == players[1]:
                 jugadores_laterales.append((players[0], jug7))
-        elif len(players) >= 3:
+        if len(players) == 3:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
                 jugadores_laterales.append((players[2], jug3))
             elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
                 jugadores_laterales.append((players[2], jug2))
+                jugadores_laterales.append((players[0], jug7))
             elif jugador_local == players[2]:
                 jugadores_laterales.append((players[0], jug6))
                 jugadores_laterales.append((players[1], jug7))
-        elif len(players) >= 4:
+        if len(players) == 4:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
                 jugadores_laterales.append((players[2], jug3))
                 jugadores_superiores.append((players[3], jug4))
             elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
                 jugadores_laterales.append((players[2], jug2))
                 jugadores_laterales.append((players[3], jug3))
+                jugadores_laterales.append((players[0], jug7))
             elif jugador_local == players[2]:
+                jugadores_laterales.append((players[3], jug2))
                 jugadores_laterales.append((players[0], jug6))
                 jugadores_laterales.append((players[1], jug7))
-                jugadores_laterales.append((players[3], jug2))
             elif jugador_local == players[3]:
                 jugadores_superiores.append((players[0], jug5))
                 jugadores_laterales.append((players[1], jug6))
                 jugadores_laterales.append((players[2], jug7))
-        elif len(players) >= 5:
+        if len(players) == 5:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
                 jugadores_laterales.append((players[2], jug3))
                 jugadores_superiores.append((players[3], jug4))
                 jugadores_superiores.append((players[4], jug5))
             elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
                 jugadores_laterales.append((players[2], jug2))
                 jugadores_laterales.append((players[3], jug3))
                 jugadores_superiores.append((players[4], jug4))
+                jugadores_laterales.append((players[0], jug7))
             elif jugador_local == players[2]:
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
                 jugadores_laterales.append((players[3], jug2))
                 jugadores_laterales.append((players[4], jug3))
+                jugadores_laterales.append((players[0], jug6))
+                jugadores_laterales.append((players[1], jug7))
             elif jugador_local == players[3]:
+                jugadores_laterales.append((players[4], jug2))
                 jugadores_superiores.append((players[0], jug5))
                 jugadores_laterales.append((players[1], jug6))
                 jugadores_laterales.append((players[2], jug7))
-                jugadores_laterales.append((players[4], jug2))
             elif jugador_local == players[4]:
                 jugadores_superiores.append((players[0], jug4))
                 jugadores_superiores.append((players[1], jug5))
                 jugadores_laterales.append((players[2], jug6))
                 jugadores_laterales.append((players[3], jug7))
-        elif len(players) >= 6:
+        if len(players) == 6:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
                 jugadores_laterales.append((players[2], jug3))
@@ -2906,36 +3275,36 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 jugadores_superiores.append((players[4], jug5))
                 jugadores_laterales.append((players[5], jug6))
             elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
                 jugadores_laterales.append((players[2], jug2))
                 jugadores_laterales.append((players[3], jug3))
                 jugadores_superiores.append((players[4], jug4))
                 jugadores_superiores.append((players[5], jug5))
+                jugadores_laterales.append((players[0], jug7))
             elif jugador_local == players[2]:
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
                 jugadores_laterales.append((players[3], jug2))
                 jugadores_laterales.append((players[4], jug3))
                 jugadores_superiores.append((players[5], jug4))
+                jugadores_laterales.append((players[0], jug6))
+                jugadores_laterales.append((players[1], jug7))
             elif jugador_local == players[3]:
+                jugadores_laterales.append((players[4], jug2))
+                jugadores_laterales.append((players[5], jug3))
                 jugadores_superiores.append((players[0], jug5))
                 jugadores_laterales.append((players[1], jug6))
                 jugadores_laterales.append((players[2], jug7))
-                jugadores_laterales.append((players[4], jug2))
-                jugadores_laterales.append((players[5], jug3))
             elif jugador_local == players[4]:
+                jugadores_laterales.append((players[5], jug2))
                 jugadores_superiores.append((players[0], jug4))
                 jugadores_superiores.append((players[1], jug5))
                 jugadores_laterales.append((players[2], jug6))
                 jugadores_laterales.append((players[3], jug7))
-                jugadores_laterales.append((players[5], jug2))
             elif jugador_local == players[5]:
                 jugadores_laterales.append((players[0], jug3))
                 jugadores_superiores.append((players[1], jug4))
                 jugadores_superiores.append((players[2], jug5))
                 jugadores_laterales.append((players[3], jug6))
                 jugadores_laterales.append((players[4], jug7))
-        elif len(players) >= 7:
+        if len(players) == 7:
             if jugador_local == players[0]:
                 jugadores_laterales.append((players[1], jug2))
                 jugadores_laterales.append((players[2], jug3))
@@ -2944,40 +3313,40 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 jugadores_laterales.append((players[5], jug6))
                 jugadores_laterales.append((players[6], jug7))
             elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
                 jugadores_laterales.append((players[2], jug2))
                 jugadores_laterales.append((players[3], jug3))
                 jugadores_superiores.append((players[4], jug4))
                 jugadores_superiores.append((players[5], jug5))
                 jugadores_laterales.append((players[6], jug6))
+                jugadores_laterales.append((players[0], jug7))
             elif jugador_local == players[2]:
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
                 jugadores_laterales.append((players[3], jug2))
                 jugadores_laterales.append((players[4], jug3))
                 jugadores_superiores.append((players[5], jug4))
                 jugadores_superiores.append((players[6], jug5))
+                jugadores_laterales.append((players[0], jug6))
+                jugadores_laterales.append((players[1], jug7))
             elif jugador_local == players[3]:
-                jugadores_superiores.append((players[0], jug5))
-                jugadores_laterales.append((players[1], jug6))
-                jugadores_laterales.append((players[2], jug7))
                 jugadores_laterales.append((players[4], jug2))
                 jugadores_laterales.append((players[5], jug3))
                 jugadores_superiores.append((players[6], jug4))
+                jugadores_superiores.append((players[0], jug5))
+                jugadores_laterales.append((players[1], jug6))
+                jugadores_laterales.append((players[2], jug7))
             elif jugador_local == players[4]:
+                jugadores_laterales.append((players[5], jug2))
+                jugadores_laterales.append((players[6], jug3))
                 jugadores_superiores.append((players[0], jug4))
                 jugadores_superiores.append((players[1], jug5))
                 jugadores_laterales.append((players[2], jug6))
                 jugadores_laterales.append((players[3], jug7))
-                jugadores_laterales.append((players[5], jug2))
-                jugadores_laterales.append((players[6], jug3))
             elif jugador_local == players[5]:
+                jugadores_laterales.append((players[6], jug2))
                 jugadores_laterales.append((players[0], jug3))
                 jugadores_superiores.append((players[1], jug4))
                 jugadores_superiores.append((players[2], jug5))
                 jugadores_laterales.append((players[3], jug6))
                 jugadores_laterales.append((players[4], jug7))
-                jugadores_laterales.append((players[6], jug2))
             elif jugador_local == players[6]:
                 jugadores_laterales.append((players[0], jug2))
                 jugadores_laterales.append((players[1], jug3))
@@ -2988,12 +3357,175 @@ def main(manager_de_red): # <-- Acepta el manager de red
         
 
         # Dibuja solo los jugadores activos en los recuadros correspondientes
+        # Dibuja solo los jugadores activos en los recuadros correspondientes
         for jugador, recuadro in jugadores_laterales:
             draw_horizontal_rain_hand_rotated(jugador, recuadro)
 
         for jugador, recuadro in jugadores_superiores:
             draw_horizontal_pt_hand(jugador, recuadro)
+        # ===== Construir mapeo caja_de_bajada -> jugador =====
+        # Esto asegura que la zona de arrastre (bajN) esté vinculada al jugador correcto
+        baj_box_to_player = {}
+        # jugador_local siempre a baj1 si existe
+        if jugador_local:
+            baj_box_to_player["baj1"] = jugador_local
+        # Buscar por rects asociados (jugX -> bajX)
+        for p, r in jugadores_laterales + jugadores_superiores:
+            # encontrar clave 'jugN' en boxes cuyo rect sea r
+            jug_key = next((k for k, v in boxes.items() if v == r and k.startswith("jug")), None)
+            if jug_key:
+                baj_key = jug_key.replace("jug", "baj")
+                baj_box_to_player[baj_key] = p
+        # fallback: mapear por índice en players si alguna bajX no mapeó
+        for idx, p in enumerate(players):
+            key = f"baj{idx+1}"
+            if key not in baj_box_to_player and key in boxes:
+                baj_box_to_player[key] = p
 
+        BASE_NOMBRE_SIZE = 14
+        BASE_PUNTOS_SIZE = 11
+
+        def get_fitting_font(text, max_width, base_size, min_size=8):
+            """
+            Devuelve una pygame.font.Font cuyo tamaño se va reduciendo desde base_size
+            hasta que el ancho del texto cabe en max_width (o llega a min_size).
+            """
+            size = base_size
+            font = get_game_font(size)
+            # medir con render (color cualquiera)
+            width = font.render(text, True, (0,0,0)).get_width()
+            while width > max_width and size > min_size:
+                size -= 1
+                font = get_game_font(size)
+                width = font.render(text, True, (0,0,0)).get_width()
+            return font
+
+        # font por defecto para casos donde no se aplique ajuste directo
+        # --- Después de dibujar manos, cartas y elementos (justo antes de dibujar nombres) ---
+        # Tomar snapshot del screen tal y como están las cartas / UI detrás de los nombres
+        try:
+            pre_names_snapshot = screen.copy()
+        except Exception:
+            pre_names_snapshot = None
+
+        BASE_NOMBRE_SIZE = 14
+        BASE_PUNTOS_SIZE = 11
+
+        def get_fitting_font(text, max_width, base_size, min_size=8):
+            """Devuelve pygame.font.Font cuyo tamaño se reduce pixel a pixel hasta caber."""
+            size = base_size
+            font = get_game_font(size)
+            width = font.render(text, True, (0,0,0)).get_width()
+            while width > max_width and size > min_size:
+                size -= 1
+                font = get_game_font(size)
+                width = font.render(text, True, (0,0,0)).get_width()
+            return font
+
+        # font por defecto
+        font_nombre = get_game_font(BASE_NOMBRE_SIZE)
+        font_puntos = get_game_font(BASE_PUNTOS_SIZE)
+
+        def draw_text_with_border(surface, text, font, pos, color=(255,255,255), border_color=(0,0,0)):
+            """Dibuja texto con borde (8 direcciones)."""
+            x, y = pos
+            # render de borde una sola vez por dirección para ahorrar
+            for ox, oy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                surface.blit(font.render(text, True, border_color), (x+ox, y+oy))
+            surface.blit(font.render(text, True, color), (x, y))
+
+        def restore_region(rect, inflate_x=12, inflate_y=10):
+            """
+            Restaura la región desde la instantánea pre_names_snapshot (que contiene
+            las cartas ya dibujadas). Si no existe snapshot, usa fondo_img como fallback.
+            Esto evita borrar las cartas debajo de los nombres al actualizar texto.
+            """
+            try:
+                bg_rect = rect.inflate(inflate_x, inflate_y).clip(pygame.Rect(0,0,WIDTH,HEIGHT))
+                if bg_rect.width <= 0 or bg_rect.height <= 0:
+                    return
+                if pre_names_snapshot:
+                    # copiar desde la snapshot que contiene cartas y UI previas
+                    screen.blit(pre_names_snapshot, bg_rect.topleft, bg_rect)
+                else:
+                    # fallback: reponer desde fondo estático (pierde cartas)
+                    screen.blit(fondo_img, bg_rect.topleft, bg_rect)
+            except Exception:
+                pygame.draw.rect(screen, (0,0,0), rect.inflate(inflate_x, inflate_y))
+
+        # --- Jugador local (parte inferior) ---
+        if jugador_local:
+            jug_rect = boxes.get("jug1")
+            if jug_rect:
+                borde_color = (255,0,0) if getattr(jugador_local, "isHand", False) else (0,0,0)
+                nombre_txt = str(getattr(jugador_local, "playerName", "Jugador"))
+                max_w_nombre = max(40, jug_rect.width - 8)
+                font_nombre_used = get_fitting_font(nombre_txt, max_w_nombre, BASE_NOMBRE_SIZE)
+                nombre_rect = font_nombre_used.render(nombre_txt, True, (255,255,255)).get_rect(
+                    center=(jug_rect.centerx, jug_rect.bottom + 15)
+                )
+                # restaurar sólo la zona previa desde la snapshot (no el fondo completo)
+                restore_region(nombre_rect, 14, 12)
+                draw_text_with_border(screen, nombre_txt, font_nombre_used, nombre_rect.topleft,
+                                     (255,255,255), borde_color)
+
+                # Puntos debajo del nombre: NO borrar el fondo (solo dibujar sobre lo que haya)
+                puntos_txt = f"{getattr(jugador_local, 'playerPoints', 0)} pts"
+                max_w_puntos = max(30, jug_rect.width - 8)
+                font_puntos_used = get_fitting_font(puntos_txt, max_w_puntos, BASE_PUNTOS_SIZE)
+                puntos_rect = font_puntos_used.render(puntos_txt, True, (220,220,120)).get_rect(
+                    center=(jug_rect.centerx, nombre_rect.bottom + 12)
+                )
+                # no restaurar (para no borrar cartas); si quieres limpiar sólo texto viejo, restaura desde snapshot:
+                restore_region(puntos_rect, 12, 10)
+                draw_text_with_border(screen, puntos_txt, font_puntos_used, puntos_rect.topleft,
+                                     (220,220,120), (0,0,0))
+
+        # --- Jugadores laterales ---
+        for jugador, recuadro in jugadores_laterales:
+            borde_color = (255,0,0) if getattr(jugador, "isHand", False) else (0,0,0)
+            nombre_txt = str(getattr(jugador, "playerName", "Jugador"))
+            max_w_nombre = max(30, recuadro.width - 8)
+            font_nombre_used = get_fitting_font(nombre_txt, max_w_nombre, BASE_NOMBRE_SIZE)
+            nombre_rect = font_nombre_used.render(nombre_txt, True, (255,255,255)).get_rect(
+                center=(recuadro.centerx, recuadro.top - 12)
+            )
+            restore_region(nombre_rect, 12, 10)
+            draw_text_with_border(screen, nombre_txt, font_nombre_used, nombre_rect.topleft,
+                                 (255,255,255), borde_color)
+
+            puntos_txt = f"{getattr(jugador, 'playerPoints', 0)} pts"
+            max_w_puntos = max(30, recuadro.width - 8)
+            font_puntos_used = get_fitting_font(puntos_txt, max_w_puntos, BASE_PUNTOS_SIZE)
+            puntos_rect = font_puntos_used.render(puntos_txt, True, (220,220,120)).get_rect(
+                center=(recuadro.centerx, nombre_rect.bottom + 10)
+            )
+            restore_region(puntos_rect, 10, 8)
+            draw_text_with_border(screen, puntos_txt, font_puntos_used, puntos_rect.topleft,
+                                 (220,220,120), (0,0,0))
+
+        # --- Jugadores superiores ---
+        for jugador, recuadro in jugadores_superiores:
+            borde_color = (255,0,0) if getattr(jugador, "isHand", False) else (0,0,0)
+            nombre_txt = str(getattr(jugador, "playerName", "Jugador"))
+            max_w_nombre = max(30, recuadro.width - 8)
+            font_nombre_used = get_fitting_font(nombre_txt, max_w_nombre, BASE_NOMBRE_SIZE)
+            nombre_rect = font_nombre_used.render(nombre_txt, True, (255,255,255)).get_rect(
+                center=(recuadro.centerx, recuadro.bottom + 15)
+            )
+            restore_region(nombre_rect, 12, 10)
+            draw_text_with_border(screen, nombre_txt, font_nombre_used, nombre_rect.topleft,
+                                 (255,255,255), borde_color)
+
+            puntos_txt = f"{getattr(jugador, 'playerPoints', 0)} pts"
+            max_w_puntos = max(30, recuadro.width - 8)
+            font_puntos_used = get_fitting_font(puntos_txt, max_w_puntos, BASE_PUNTOS_SIZE)
+            puntos_rect = font_puntos_used.render(puntos_txt, True, (220,220,120)).get_rect(
+                center=(recuadro.centerx, nombre_rect.bottom + 12)
+            )
+            restore_region(puntos_rect, 10, 8)
+            draw_text_with_border(screen, puntos_txt, font_puntos_used, puntos_rect.topleft,
+                                 (220,220,120), (0,0,0))
         # Dibuja cartas en Seguidilla (zona_cartas[0])
         if zona_cartas[0]:
             rect = cuadros_interactivos.get("Seguidilla")
@@ -3019,8 +3551,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     card_rect = pygame.Rect(x, start_y + i * solapamiento, card_width, card_height)
                     screen.blit(img, card_rect.topleft)
 
-        # Dibuja cartas en Trio (zona_cartas[1])
-        if zona_cartas[1] and roundOne:
+        # Dibuja cartas en Trio (zona_cartas[1]) ##### Prueba no se para ver que pasa 
+        '''if zona_cartas[1] and roundOne:
             rect = cuadros_interactivos.get("Trio")
             if rect:
                 n = len(zona_cartas[1])
@@ -3039,9 +3571,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     img = get_card_image(card)
                     img = pygame.transform.smoothscale(img, (card_width, card_height))
                     card_rect = pygame.Rect(x, start_y + i * solapamiento, card_width, card_height)
-                    screen.blit(img, card_rect.topleft)
+                    screen.blit(img, card_rect.topleft)'''
 
-        if zona_cartas[1] and roundTwo:
+        if zona_cartas[1]:
             rect = cuadros_interactivos.get("Trio")    # Seguidilla2 en la zona[1]
             if rect:
                 n = len(zona_cartas[1])
@@ -3068,10 +3600,79 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
         # Dibuja cartas en Descarte (zona_cartas[2])
         # Deben haber como mucho 2 cartas
-        if zona_cartas[2]:
-            rect = cuadros_interactivos.get("Descarte")
+        rect = cuadros_interactivos.get("Descarte")
+        if rect and len(zona_cartas) > 2 and zona_cartas[2]:
+            stack = zona_cartas[2]
+            # usar mismas medidas que casillas
+            card_w = rect.width - 8
+            card_h = int(card_w / 0.68)
+            overlap_y = max(6, card_h // 3)
+            # limitar visibilidad para no desbordar el rect
+            max_visible = max(1, (rect.height - 8) // overlap_y)
+            start_index = max(0, len(stack) - max_visible)
+            # tomar referencia Y igual que otras casillas para empezar la lluvia alineada
+            ref_rect = cuadros_interactivos.get("Trio") or cuadros_interactivos.get("Seguidilla") or cuadros_interactivos.get("ZonaCentralInteractiva") or rect
+            base_y = ref_rect.y + 70
+            for i, carta in enumerate(stack[start_index:], start=0):
+                try:
+                    img = get_card_image(carta)
+                    img = pygame.transform.smoothscale(img, (card_w, card_h))
+                except Exception:
+                    img = pygame.Surface((card_w, card_h))
+                    img.fill((200, 200, 200))
+                x = rect.x + (rect.width - card_w) // 2
+                y = base_y + i * overlap_y
+                screen.blit(img, (x, y))
+        # --- Dibuja la Zona CentralInteractiva como las demás casillas (lluvia / solapada) ---
+        zona_rect = cuadros_interactivos.get("ZonaCentralInteractiva")
+        try:
+            zona_central = zona_cartas[3] if len(zona_cartas) > 3 else (zona_cartas[-1] if zona_cartas else [])
+        except Exception:
+            zona_central = []
+        # Dibujar en solapamiento vertical (hacia abajo), sin overlay ni borde
+        if zona_rect is not None and zona_central:
+            card_w = zona_rect.width - 8
+            card_h = int(card_w / 0.68)
+            # solapamiento vertical (espacio entre cartas)
+            overlap_y = max(6, card_h // 3)
+            # calcular cuántas caben verticalmente
+            max_visible = max(1, (zona_rect.height - 8) // overlap_y)
+            start_index = max(0, len(zona_central) - max_visible)
+            for i, carta in enumerate(zona_central[start_index:], start=0):
+                try:
+                    img = get_card_image(carta)
+                    img = pygame.transform.smoothscale(img, (card_w, card_h))
+                except Exception:
+                    img = pygame.Surface((card_w, card_h))
+                    img.fill((180, 180, 180))
+                x = zona_rect.x + (zona_rect.width - card_w) // 2  # centrar horizontalmente
+                y = zona_rect.y + 4 + i * overlap_y
+                screen.blit(img, (x, y))       
+        if zona_cartas[3] and roundTwo:
+            rect = cuadros_interactivos.get("Trio") 
             if rect:
-                card = zona_cartas[2][-1]  # Solo la última carta
+                n = len(zona_cartas[3])
+                card_width = rect.width - 8
+                card_height = int(card_width / 0.68)
+        if zona_cartas[3] and roundFour:
+            rect = cuadros_interactivos.get("Seguidilla") 
+            if rect:
+                n = len(zona_cartas[3])
+                card_width = rect.width - 8
+                card_height = int(card_width / 0.68)
+
+        rect = cuadros_interactivos.get("Tomar descarte")
+        if rect:
+            plantilla_img_path = os.path.join(ASSETS_PATH, "plantilla.png")
+            if os.path.exists(plantilla_img_path):
+                plantilla_img = pygame.image.load(plantilla_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(plantilla_img, (rect.width - 8, rect.height - 8))
+                img_rect = img.get_rect(center=rect.center)
+                screen.blit(img, img_rect.topleft)
+
+            # Dibuja la última carta descartada encima
+            if mazo_descarte:
+                card = mazo_descarte[-1]
                 card_width = rect.width - 8
                 card_height = int(card_width / 0.68)
                 x = rect.x + (rect.width - card_width) // 2
@@ -3081,8 +3682,34 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 card_rect = pygame.Rect(x, y, card_width, card_height)
                 screen.blit(img, card_rect.topleft)
 
-        # Dibuja la última carta descartada en el cuadro "Tomar descarte"
-        # Dibuja el fondo del cuadro "Tomar descarte"
+            # DIBUJA OVERLAY SEMI‑INVISIBLE (solo visual, la detección de click usa cuadros_interactivos)
+            ov = cuadros_interactivos.get("DescarteOverlay")
+            if ov:
+                surf = pygame.Surface((ov.width, ov.height), pygame.SRCALPHA)
+                surf.fill((255, 255, 255, 20))  # muy translúcido
+                screen.blit(surf, ov.topleft)
+
+        # for idx, nombre in enumerate(["Seguidilla", "Trio", "Descarte"]):
+        #     if zona_cartas[idx]:
+        #         rect = cuadros_interactivos.get(nombre)
+        #         if rect:
+                img = get_card_image(card)
+                img = pygame.transform.smoothscale(img, (card_width, card_height))
+                card_rect = pygame.Rect(x, y, card_width, card_height)
+                screen.blit(img, card_rect.topleft)
+        if zona_cartas[3] and roundTwo:
+            rect = cuadros_interactivos.get("Trio") 
+            if rect:
+                n = len(zona_cartas[3])
+                card_width = rect.width - 8
+                card_height = int(card_width / 0.68)
+        if zona_cartas[3] and roundFour:
+            rect = cuadros_interactivos.get("Seguidilla") 
+            if rect:
+                n = len(zona_cartas[3])
+                card_width = rect.width - 8
+                card_height = int(card_width / 0.68)
+
         rect = cuadros_interactivos.get("Tomar descarte")
         if rect:
             plantilla_img_path = os.path.join(ASSETS_PATH, "plantilla.png")
@@ -3134,22 +3761,39 @@ def main(manager_de_red): # <-- Acepta el manager de red
             screen.blit(texto, rect)
         elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
             mensaje_temporal = ""
+        # Dibujar siempre los botones Ronda / Turno / Menú con las imágenes cacheadas (evita parpadeo)
+        try:
+            ronda_rect = cuadros_interactivos.get("Ronda")
+            if ronda_rect:
+                img = pygame.transform.smoothscale(ronda_rect.width, ronda_rect.height)
+                screen.blit(img, ronda_rect.topleft)
 
+            turno_rect = cuadros_interactivos.get("Turno")
+            if turno_rect:
+                img = pygame.transform.smoothscale(turno_rect.width, turno_rect.height)
+                screen.blit(img, turno_rect.topleft)
+
+            menu_rect = cuadros_interactivos.get("Menú") or cuadros_interactivos.get("Menu")
+            if menu_rect:
+                img = pygame.transform.smoothscale(menu_rect.width, menu_rect.height)
+                screen.blit(img, menu_rect.topleft)
+        except Exception:
+            pass
         # --- Botón "Ronda" ---
-        ronda_img_path = os.path.join(ASSETS_PATH, "ronda.png")
-        if os.path.exists(ronda_img_path):
-            ronda_img = pygame.image.load(ronda_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(ronda_img, (ronda_rect.width, ronda_rect.height))
-            screen.blit(img, ronda_rect.topleft)
-        cuadros_interactivos["Ronda"] = ronda_rect
+            ronda_img_path = os.path.join(ASSETS_PATH, "ronda.png")
+            if os.path.exists(ronda_img_path):
+                ronda_img = pygame.image.load(ronda_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(ronda_img, (ronda_rect.width, ronda_rect.height))
+                screen.blit(img, ronda_rect.topleft)
+            cuadros_interactivos["Ronda"] = ronda_rect
 
         # --- Botón "Turno" ---
-        turno_img_path = os.path.join(ASSETS_PATH, "turno.png")
-        if os.path.exists(turno_img_path):
-            turno_img = pygame.image.load(turno_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(turno_img, (turno_rect.width, turno_rect.height))
-            screen.blit(img, turno_rect.topleft)
-        cuadros_interactivos["Turno"] = turno_rect
+            turno_img_path = os.path.join(ASSETS_PATH, "turno.png")
+            if os.path.exists(turno_img_path):
+                turno_img = pygame.image.load(turno_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(turno_img, (turno_rect.width, turno_rect.height))
+                screen.blit(img, turno_rect.topleft)
+            cuadros_interactivos["Turno"] = turno_rect
 
         # --- Mostrar solo el nombre del jugador en turno con sangría ---
         try:
@@ -3171,9 +3815,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
             ronda_text = "1"
         elif fase == "ronda2":
             ronda_text = "2"
+        elif fase == "ronda3": #####################
+            ronda_text = "3"
+        elif fase == "ronda4":
+            ronda_text = "4"
         else:
             ronda_text = ""
-
         if ronda_text:
             ronda_font = pygame.font.Font(font_path, 35)
             # Calcula la posición centrada encima del nombre
@@ -3181,159 +3828,178 @@ def main(manager_de_red): # <-- Acepta el manager de red
             ronda_rect = ronda_render.get_rect(left=turn_text_rect.left + 30, bottom=turn_text_rect.top - 25)
             render_text_with_border(ronda_text, ronda_font, (255,255,255), (200,0,0), (ronda_rect.x, ronda_rect.y), screen)            # Dibuja texto blanco con borde rojo
         # --- Botón "Menú" ---
-        menu_img_path = os.path.join(ASSETS_PATH, "menu.png")
-        if os.path.exists(menu_img_path):
-            menu_img = pygame.image.load(menu_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
-            screen.blit(img, menu_rect.topleft)
-        cuadros_interactivos["Menú"] = menu_rect
+            menu_img_path = os.path.join(ASSETS_PATH, "menu.png")
+            if os.path.exists(menu_img_path):
+                menu_img = pygame.image.load(menu_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
+                screen.blit(img, menu_rect.topleft)
+            cuadros_interactivos["Menú"] = menu_rect
 
         # Mostrar jugadas bajadas en los bloques de bajada de todos los jugadores
-        from Card import Card
 
-        # Ejemplo: crea jugadas de prueba si no existen
-        #for idx in range(len(players)):
-            #if not hasattr(players[idx], "jugadas_bajadas"):
-                # Crea jugadas de ejemplo para cada jugador
-                #players[idx].jugadas_bajadas = [
-                    #[Card("A", "♠"), Card("2", "♠"), Card("3", "♠")],
-                    #[Card("K", "♥"), Card("K", "♦"), Card("K", "♣")]
-                #]
-
-        # Diccionario para asociar cada bloque de bajada con el jugador correspondiente
-        bloques_bajada = {
-            0: "baj1",
-            1: "baj2",
-            2: "baj3",
-            3: "baj4",
-            4: "baj5",
-            5: "baj6",
-            6: "baj7"
-        }
-        # Diccionario para guardar referencias de rectángulos de jugadas
+        # Mostrar jugadas bajadas: ubicar cada bajada junto a la caja del jugador (misma lógica que nombres/manos)
         rects_jugadas = {}
 
-        for idx, jugador in enumerate(players):
-            bloque_nombre = bloques_bajada.get(idx)
-            if not bloque_nombre:
-                continue
-            bloque_rect = boxes.get(bloque_nombre)
+        # Construir mapping playerName -> rect de "bajada" usando la misma perspectiva que ya usamos
+        player_baj_rect = {}
+
+        # jugador local -> baj1
+        if jugador_local:
+            player_baj_rect[getattr(jugador_local, "playerName", None)] = boxes.get("baj1")
+
+        # Para laterales/superiores ya tenemos listas (jugadores_laterales, jugadores_superiores)
+        all_side_players = jugadores_laterales + jugadores_superiores
+        for p, jug_rect in all_side_players:
+            # buscar la clave de 'jugX' dentro de boxes que coincida con el rect actual
+            jug_key = next((k for k, v in boxes.items() if v == jug_rect and k.startswith("jug")), None)
+            if jug_key:
+                baj_key = jug_key.replace("jug", "baj")
+                player_baj_rect[getattr(p, "playerName", None)] = boxes.get(baj_key)
+
+        # También cubrir casos si hay players no listados (por si layout cambió)
+        for p in players:
+            if p.playerName not in player_baj_rect:
+                # intentar mapear por índice relativo (0->baj1,1->baj2,...)
+                try:
+                    idx = players.index(p)
+                    key = f"baj{idx+1}"
+                    if key in boxes:
+                        player_baj_rect[p.playerName] = boxes.get(key)
+                except Exception:
+                    pass
+
+        # función helper que dibuja jugadas dentro de un rect (vertical u horizontal según caja)
+        def draw_plays_in_bajada(jugador, bloque_rect):
             if not bloque_rect:
-                continue
-            # Usa las jugadas reales del jugador
-            if hasattr(jugador, "playMade") and jugador.playMade:
-                rects_jugadas[jugador.playerName] = []
-                # --- Laterales: cartas pequeñas, verticales y rotadas ---
-                if bloque_nombre in ["baj2", "baj3", "baj6", "baj7"]:
-                    margen_jugada = 1 
-                    card_width = int(bloque_rect.width * 0.45)
-                    card_height = int(card_width / 0.68)
-                    x = bloque_rect.x + (bloque_rect.width - card_height) // 2
-                    y_actual = bloque_rect.y + 6
-                    # Aquí usamos enumerate para conocer el índice real en playMade
-                    #for play_index, jugada in enumerate(jugador.playMade):
-                        #print(f"jugada: {[str(c) for c in jugada]}")
-                    # preferir jugadas_bajadas (objetos Card) si existen, sino usar playMade
-                    plays_source = getattr(jugador, "jugadas_bajadas", None) or getattr(jugador, "playMade", [])
-                    for play_index, jugada in enumerate(plays_source):
-                        string_to_card(jugada[0])
-                        string_to_card(jugada[1])
-                        # Si la entrada es una lista de strings (p.ej. ['trio','straight']), intenta resolver
-                        if isinstance(jugada, list) and jugada and isinstance(jugada[0], str):
-                            string_to_card(jugada[0])
-                            resolved = None
-                            if hasattr(jugador, "jugadas_bajadas") and len(jugador.jugadas_bajadas) > play_index:
-                                resolved = jugador.jugadas_bajadas[play_index]
-                            if resolved is None:
-                                print(f"Advertencia: jugada en play_index {play_index} parece contener strings y no hay jugadas_bajadas para resolverla. Saltando.")
-                                continue
-                            jugada = resolved
-                         # Si la jugada es un dict, extrae trío y seguidilla
-                        jugadas_a_dibujar = []
-                        if isinstance(jugada, dict):
-                             if "trio" in jugada and jugada["trio"]:
-                                 jugadas_a_dibujar.append(jugada["trio"])
-                             if "straight" in jugada and jugada["straight"]:
-                                 jugadas_a_dibujar.append(jugada["straight"])
-                        else:
-                             jugadas_a_dibujar = [jugada]
-                        for cartas_jugada in jugadas_a_dibujar:
+                return
+            plays_source = getattr(jugador, "playMade", []) or getattr(jugador, "jugadas_bajadas", [])
+            if not plays_source:
+                return
+            rects_jugadas[jugador.playerName] = []
+
+            vertical_boxes = {"baj2", "baj3", "baj6", "baj7"}
+            # averiguar nombre de la caja para orientación
+            box_name = next((k for k, v in boxes.items() if v == bloque_rect), None)
+
+            if box_name in vertical_boxes:
+                margen_jugada = 1
+                card_width = int(bloque_rect.width * 0.45)
+                card_height = int(card_width / 0.68)
+                x = bloque_rect.x + (bloque_rect.width - card_height) // 2
+                y_actual = bloque_rect.y + 6
+
+                for play_index, jugada in enumerate(plays_source):
+                    string_to_card(jugada[0])
+                    string_to_card(jugada[1])
+                    if isinstance(jugada, list) and jugada and isinstance(jugada[0], str):
+                        resolved = None
+                        if hasattr(jugador, "jugadas_bajadas") and len(jugador.jugadas_bajadas) > play_index:
+                            resolved = jugador.jugadas_bajadas[play_index]
+                        if resolved is None:
+                            continue
+                        jugada = resolved
+
+                    resolved_jugada = resolve_play(jugador, jugada, play_index)
+                    if not resolved_jugada:
+                        continue
+
+                    jugadas_a_dibujar = []
+                    if isinstance(resolved_jugada, dict):
+                        if "trio" in resolved_jugada and resolved_jugada["trio"]:
+                            jugadas_a_dibujar.append(("trio", resolved_jugada["trio"]))
+                        if "straight" in resolved_jugada and resolved_jugada["straight"]:
+                            jugadas_a_dibujar.append(("straight", resolved_jugada["straight"]))
+                    elif isinstance(resolved_jugada, list):
+                        inferred_type = "trio" if len(resolved_jugada) == 3 else "straight"
+                        jugadas_a_dibujar.append((inferred_type, resolved_jugada))
+                    else:
+                        continue
+
+                    for subtype, cartas_jugada in jugadas_a_dibujar:
+                        n = len(cartas_jugada)
+                        if n == 0:
+                            continue
+                        solapamiento = int(card_width * 0.20) if n > 1 else 0
+                        inicio_rect = pygame.Rect(x, y_actual, card_width, card_height)
+                        final_rect = pygame.Rect(x + (n - 1) * solapamiento, y_actual, card_width, card_height)
+                        rects_jugadas[jugador.playerName].append({
+                            "inicio": inicio_rect,
+                            "final": final_rect,
+                            "tipo": "trio" if subtype == "trio" else "straight",
+                            "play_index": play_index,
+                            "subtype": subtype,
+                            "cartas": cartas_jugada
+                        })
+                        for i, carta in enumerate(cartas_jugada):
                             string_to_card([cartas_jugada])
-                            #print(f"jugada (DEBE SER OBJETOS DE CARTAS): {[str(c) for c in cartas_jugada]}")
-                            n = len(cartas_jugada)
-                            if n == 0:
-                                continue
-                            solapamiento = int(card_height * 0.20) if n > 1 else 0
-                            # Guarda la posición inicial y final de la jugada
-                            inicio_rect = pygame.Rect(x, y_actual, card_height, card_width)
-                            final_rect = pygame.Rect(x, y_actual + (n-1)*solapamiento, card_height, card_width)
-                            # Guardamos también el índice original en playMade (play_index)
-                            rects_jugadas[jugador.playerName].append({
-                                "inicio": inicio_rect,
-                                "final": final_rect,
-                                "tipo": "trio" if n == 3 else "straight",
-                                "play_index": play_index,
-                                "cartas": cartas_jugada
-                            })
-                            # Dibuja la jugada
-                            for i, carta in enumerate(cartas_jugada):
-                                string_to_card([cartas_jugada])
-                                img = get_card_image(carta)
-                                img = pygame.transform.smoothscale(img, (card_width, card_height))
-                                img = pygame.transform.rotate(img, 90)
-                                card_rect = pygame.Rect(x, y_actual + i * solapamiento, card_height, card_width)
-                                if card_rect.bottom <= bloque_rect.bottom:
-                                    screen.blit(img, card_rect.topleft)
-                            # Mueve y_actual para la siguiente jugada
-                            y_actual += n * solapamiento + card_width + margen_jugada
-                else:
-                    # El resto de bloques como antes
-                    card_height = bloque_rect.height - 8
-                    card_width = int(card_height * 0.68)
-                    margen_jugada = 1  
-                    x_actual = bloque_rect.x + 6
-                    y = bloque_rect.y + (bloque_rect.height - card_height) // 2 - 18
-                    # Usamos enumerate también aquí para mantener play_index correcto
-                    plays_source = getattr(jugador, "jugadas_bajadas", None) or getattr(jugador, "playMade", [])
-                    for play_index, jugada in enumerate(plays_source):
-                        if isinstance(jugada, list) and jugada and isinstance(jugada[0], str):
-                            resolved = None
-                            if hasattr(jugador, "jugadas_bajadas") and len(jugador.jugadas_bajadas) > play_index:
-                                resolved = jugador.jugadas_bajadas[play_index]
-                            if resolved is None:
-                                print(f"Advertencia: jugada en play_index {play_index} parece contener strings y no hay jugadas_bajadas para resolverla. Saltando.")
-                                continue
-                            jugada = resolved
-                        jugadas_a_dibujar = []
-                        if isinstance(jugada, dict):
-                            if "trio" in jugada and jugada["trio"]:
-                                jugadas_a_dibujar.append(jugada["trio"])
-                            if "straight" in jugada and jugada["straight"]:
-                                jugadas_a_dibujar.append(jugada["straight"])
-                        else:
-                            jugadas_a_dibujar = [jugada]
-                        for cartas_jugada in jugadas_a_dibujar:
-                            n = len(cartas_jugada)
-                            if n == 0:
-                                continue
-                            solapamiento = int(card_width * 0.35) if n > 1 else 0  
-                            inicio_rect = pygame.Rect(x_actual, y, card_width, card_height)
-                            final_rect = pygame.Rect(x_actual + (n-1)*solapamiento, y, card_width, card_height)
-                            # Guardar el índice original en playMade
-                            rects_jugadas[jugador.playerName].append({
-                                "inicio": inicio_rect,
-                                "final": final_rect,
-                                "tipo": "trio" if n == 3 else "straight",
-                                "play_index": play_index,
-                                "cartas": cartas_jugada
-                            })
-                            # Dibuja la jugada
-                            for i, carta in enumerate(cartas_jugada):
-                                img = get_card_image(carta)
-                                img = pygame.transform.smoothscale(img, (card_width, card_height))
-                                card_rect = pygame.Rect(x_actual + i * solapamiento, y, card_width, card_height)
+                            img = get_card_image(carta)
+                            img = pygame.transform.smoothscale(img, (card_width, card_height))
+                            img = pygame.transform.rotate(img, 90)
+                            card_rect = pygame.Rect(x, y_actual + i * solapamiento, card_height, card_width)
+                            if card_rect.bottom <= bloque_rect.bottom:
                                 screen.blit(img, card_rect.topleft)
-                            x_actual += n * solapamiento + card_width + margen_jugada
+                        y_actual += n * solapamiento + card_width + margen_jugada
+            else:
+                card_height = bloque_rect.height - 8
+                card_width = int(card_height * 0.68)
+                margen_jugada = 1
+                x_actual = bloque_rect.x + 6
+                y = bloque_rect.y + (bloque_rect.height - card_height) // 2 - 18
+
+                for play_index, jugada in enumerate(plays_source):
+                    if isinstance(jugada, list) and jugada and isinstance(jugada[0], str):
+                        resolved = None
+                        if hasattr(jugador, "jugadas_bajadas") and len(jugador.jugadas_bajadas) > play_index:
+                            resolved = jugador.jugadas_bajadas[play_index]
+                        if resolved is None:
+                            continue
+                        jugada = resolved
+
+                    resolved_jugada = resolve_play(jugador, jugada, play_index)
+                    if not resolved_jugada:
+                        continue
+
+                    jugadas_a_dibujar = []
+                    if isinstance(resolved_jugada, dict):
+                        if "trio" in resolved_jugada and resolved_jugada["trio"]:
+                            jugadas_a_dibujar.append(("trio", resolved_jugada["trio"]))
+                        if "straight" in resolved_jugada and resolved_jugada["straight"]:
+                            jugadas_a_dibujar.append(("straight", resolved_jugada["straight"]))
+                    elif isinstance(resolved_jugada, list):
+                        inferred_type = "trio" if len(resolved_jugada) == 3 else "straight"
+                        jugadas_a_dibujar.append((inferred_type, resolved_jugada))
+                    else:
+                        continue
+
+                    for subtype, cartas_jugada in jugadas_a_dibujar:
+                        n = len(cartas_jugada)
+                        if n == 0:
+                            continue
+                        solapamiento = int(card_width * 0.20) if n > 1 else 0
+                        inicio_rect = pygame.Rect(x_actual, y, card_width, card_height)
+                        final_rect = pygame.Rect(x_actual + (n - 1) * solapamiento, y, card_width, card_height)
+                        rects_jugadas[jugador.playerName].append({
+                            "inicio": inicio_rect,
+                            "final": final_rect,
+                            "tipo": "trio" if subtype == "trio" else "straight",
+                            "play_index": play_index,
+                            "subtype": subtype,
+                            "cartas": cartas_jugada
+                        })
+                        for i, carta in enumerate(cartas_jugada):
+                            img = get_card_image(carta)
+                            img = pygame.transform.smoothscale(img, (card_width, card_height))
+                            card_rect = pygame.Rect(x_actual + i * solapamiento, y, card_width, card_height)
+                            screen.blit(img, card_rect.topleft)
+                        x_actual += n * solapamiento + card_width + margen_jugada
+
+        # Dibujar todas las jugadas usando el mapping construido
+        for p in players:
+            p_name = getattr(p, "playerName", None)
+            baj_rect = player_baj_rect.get(p_name)
+            if baj_rect:
+                draw_plays_in_bajada(p, baj_rect)
+
         # --- FASE DE MOSTRAR ORDEN ---
         if fase == "mostrar_orden":
             for event in pygame.event.get():
@@ -3387,6 +4053,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     # Calcular puntos de todos los jugadores
                     for p in players:
                         p.calculatePoints()
+                    aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
+                    aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
+                    aplausos_sound.play()
                     fase = "fin1"
                     fase_fin_tiempo = time.time()
                     break
@@ -3397,7 +4066,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 if event.type == pygame.QUIT:
                     running = False
             screen.blit(fondo_img, (0, 0))
-            mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH)
+            mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=1)
             pygame.display.flip()
             # Espera 7 segundos y termina el juego (puedes cambiar el tiempo)
             if time.time() - fase_fin_tiempo >= 7:
@@ -3412,6 +4081,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     # Calcular puntos de todos los jugadores
                     for p in players:
                         p.calculatePoints()
+                    aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
+                    aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
+                    aplausos_sound.play()
                     fase = "fin2"
                     fase_fin_tiempo = time.time()
                     break
@@ -3421,47 +4093,244 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     if event.type == pygame.QUIT:
                         running = False
                 screen.blit(fondo_img, (0, 0))
-                mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH)
+                mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=2)
                 pygame.display.flip()
                 # Espera 7 segundos y termina el juego (puedes cambiar el tiempo)
                 if time.time() - fase_fin_tiempo >= 7:
-                    fase = "juego3"
+                    fase = "eleccion"
+                    roundTwo = False
+                    roundThree = True
                 continue
-        
 
+        if fase == "ronda3":
+            for jugador in players:
+                if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
+                    # Calcular puntos de todos los jugadores
+                    for p in players:
+                        p.calculatePoints()
+                    aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
+                    aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
+                    aplausos_sound.play()                    
+                    fase = "fin3"
+                    fase_fin_tiempo = time.time()
+                    break
+
+        if fase == "fin3":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                screen.blit(fondo_img, (0, 0))
+                mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=3)
+                pygame.display.flip()
+                # Espera 7 segundos y termina el juego (puedes cambiar el tiempo)
+                if time.time() - fase_fin_tiempo >= 7:
+                    fase = "eleccion"
+                    roundThree = False
+                    roundFour = True
+                continue
+
+        if fase == "ronda4":
+            for jugador in players:
+                if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
+                    # Calcular puntos de todos los jugadores
+                    for p in players:
+                        p.calculatePoints()
+                    aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
+                    aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
+                    aplausos_sound.play()
+                    fase = "fin4"
+                    fase_fin_tiempo = time.time()
+                    break
+        if fase == "fin4":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                screen.blit(fondo_img, (0, 0))
+                mostrar_puntuacion_final_detallada(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=4)
+                pygame.display.flip()
+                # Espera 7 segundos y termina el juego (puedes cambiar el tiempo)
+                if time.time() - fase_fin_tiempo >= 7:
+                    running = False
+                continue
         pygame.display.flip()
     return
 
-def mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH):
-    # Ordenar jugadores por puntos de menor a mayor
-    jugadores_ordenados = sorted(players, key=lambda j: getattr(j, "playerPoints", 0))
 
-    ancho_rect = 550
-    alto_rect = 60 + 40 * len(jugadores_ordenados)
+def mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=None):
+    """
+    Muestra un panel centrado que diga:
+      PUNTUACIONES FINALES
+      Ronda: <n>        (si round_number no es None)
+    y debajo, la lista de jugadores en el orden dado.
+    Ajustes: mayor espaciado y mejor centrado para que no se corte abajo.
+    """
+    jugadores = list(players)  # respetar orden de juego
+
+    filas = max(1, len(jugadores))
+    espacio_entre = 52        # un poco más de separación entre filas
+    top_padding = 36
+    bottom_padding = 40
+    header_h = 120            # más espacio para título + subtítulo
+
+    alto_rect = header_h + filas * espacio_entre + top_padding + bottom_padding
+    ancho_rect = min(WIDTH - 140, 820)
+
+    # evitar que el rect se salga de la pantalla; reducir si es necesario
+    if alto_rect + 80 > HEIGHT:
+        alto_rect = HEIGHT - 80
+        espacio_entre = max(36, (alto_rect - header_h - top_padding - bottom_padding) // max(1, filas))
+
     x_rect = (WIDTH - ancho_rect) // 2
-    y_rect = HEIGHT // 2 - 180
-
-    font_path = os.path.join(ASSETS_PATH, "PressStart2P-Regular.ttf")
-    if os.path.exists(font_path):
-        font_orden = pygame.font.Font(font_path, 25)
-    else:
-        font_orden = pygame.font.SysFont("arial", 25, bold=True)
+    y_rect = max(40, (HEIGHT - alto_rect) // 2)
 
     rect_fondo = pygame.Rect(x_rect, y_rect, ancho_rect, alto_rect)
-    pygame.draw.rect(screen, (60, 60, 60), rect_fondo, border_radius=18)
-    pygame.draw.rect(screen, (180, 180, 180), rect_fondo, 2, border_radius=18)
 
-    titulo = font_orden.render("Puntuaciones Finales", True, (255, 255, 255))
-    rect_titulo = titulo.get_rect(center=(WIDTH // 2, y_rect + 36))
-    screen.blit(titulo, rect_titulo)
+    # Fondo semitransparente + borde
+    overlay = pygame.Surface((rect_fondo.width, rect_fondo.height), pygame.SRCALPHA)
+    overlay.fill((18, 18, 18, 200))
+    screen.blit(overlay, rect_fondo.topleft)
+    pygame.draw.rect(screen, (180, 180, 180), rect_fondo, 2, border_radius=12)
 
-    for i, jugador in enumerate(jugadores_ordenados):
+    # Fuentes (usar la fuente del juego si existe)
+    title_font = get_game_font(34)
+    subtitle_font = get_game_font(18)
+    player_font = get_game_font(22)
+    info_font = get_game_font(12)
+
+    center_x = x_rect + ancho_rect // 2
+
+    # Título grande centrado (con borde para legibilidad)
+    title_txt = "Puntuaciones Finales"
+    title_surf = title_font.render(title_txt, True, (255, 255, 255))
+    title_pos = (center_x - title_surf.get_width() // 2, y_rect + 18)
+    # borde simple
+    for ox, oy in [(-1,0),(1,0),(0,-1),(0,1)]:
+        screen.blit(title_font.render(title_txt, True, (0,0,0)), (title_pos[0] + ox, title_pos[1] + oy))
+    screen.blit(title_surf, title_pos)
+
+    # Subtítulo Ronda (si aplica) — centrado, con margen extra debajo
+    players_start_y = title_pos[1] + title_surf.get_height() + 12
+    if round_number is not None:
+        sub_txt = f"Ronda: {round_number}"
+        sub_surf = subtitle_font.render(sub_txt, True, (220, 220, 220))
+        sub_pos = (center_x - sub_surf.get_width() // 2, players_start_y)
+        screen.blit(sub_surf, sub_pos)
+        players_start_y = sub_pos[1] + sub_surf.get_height() + 18
+    else:
+        players_start_y += 8
+
+    # Lista de jugadores (centrada horizontalmente, más abajo)
+    max_players_display = (alto_rect - (players_start_y - y_rect) - bottom_padding) // espacio_entre
+    # si hay demasiados jugadores, ajustar espacio para que entren
+    if filas > max_players_display and max_players_display > 0:
+        espacio_entre = max(32, (alto_rect - (players_start_y - y_rect) - bottom_padding) // filas)
+
+    for i, jugador in enumerate(jugadores):
         nombre = getattr(jugador, "playerName", f"Jugador {i+1}")
         puntos = getattr(jugador, "playerPoints", 0)
-        linea = f"{nombre}: {puntos} puntos"
-        texto = font_orden.render(linea, True, (255, 255, 255))
-        rect = texto.get_rect(center=(WIDTH // 2, y_rect + 80 + i * 40))
-        screen.blit(texto, rect)
+        linea = f"{i+1}. {nombre}  —  {puntos} pts"
+        y_line = players_start_y + i * espacio_entre
+        # centrar la línea
+        surf = player_font.render(linea, True, (240, 240, 220))
+        x_line = center_x - surf.get_width() // 2
+        # borde ligero para contraste sin tapar fondo
+        for ox, oy in [(-1,0),(1,0),(0,-1),(0,1)]:
+            screen.blit(player_font.render(linea, True, (0,0,0)), (x_line + ox, y_line + oy))
+        screen.blit(surf, (x_line, y_line))
+
+    # Mensaje de instrucción al final (más abajo con margen)
+    info_txt = "Iniciando Siguiente Ronda..."
+    info_surf = info_font.render(info_txt, True, (190,190,190))
+    info_rect = info_surf.get_rect(center=(center_x, y_rect + alto_rect - 22))
+    screen.blit(info_surf, info_rect.topleft)
+
+
+def mostrar_puntuacion_final_detallada(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=None):
+    """
+    Muestra pantalla de 'Puntuación final' con:
+      1er Lugar, 2do Lugar, ...
+    Ahora el 1er lugar será el jugador con MENOS puntos (orden ascendente).
+    round_number: opcional, muestra "Ronda: <n>" debajo del título si se pasa.
+    """
+    if not players:
+        return
+
+    # ordenar por puntos ASCENDENTE => primero = menor puntaje
+    jugadores_ordenados = sorted(players, key=lambda j: getattr(j, "playerPoints", 0))
+
+    # Helper para ordinales simples en español
+    def ordinal_es(n):
+        if n == 1:
+            return "1er"
+        if n == 2:
+            return "2do"
+        if n == 3:
+            return "3er"
+        return f"{n}º"
+
+    filas = len(jugadores_ordenados)
+    padding_y = 28
+    espacio_linea = 44
+    header_h = 84
+    alto_rect = header_h + filas * espacio_linea + padding_y * 2
+    ancho_rect = min(WIDTH - 120, 720 + max(0, (filas - 4) * 24))
+
+    x_rect = (WIDTH - ancho_rect) // 2
+    y_rect = max(40, (HEIGHT - alto_rect) // 2)
+
+    rect_fondo = pygame.Rect(x_rect, y_rect, ancho_rect, alto_rect)
+
+    # Fondo semitransparente + borde
+    overlay = pygame.Surface((rect_fondo.width, rect_fondo.height), pygame.SRCALPHA)
+    overlay.fill((16, 16, 16, 220))
+    screen.blit(overlay, rect_fondo.topleft)
+    pygame.draw.rect(screen, (200, 200, 200), rect_fondo, 2, border_radius=10)
+
+    # Fuentes (usar la fuente del juego)
+    title_font = get_game_font(28)
+    place_font = get_game_font(20)
+    info_font = get_game_font(12)
+
+    # Dibuja título con borde simple
+    title_txt = "Puntuación final"
+    title_surf = title_font.render(title_txt, True, (255, 255, 255))
+    tx, ty = x_rect + ancho_rect // 2, y_rect + 20
+    # borde
+    for ox, oy in [(-1,0),(1,0),(0,-1),(0,1)]:
+        screen.blit(title_font.render(title_txt, True, (0,0,0)), (tx - title_surf.get_width()//2 + ox, ty + oy))
+    screen.blit(title_surf, (tx - title_surf.get_width()//2, ty))
+
+    # Subtítulo: Ronda si se pasó
+    players_start_y = ty + title_surf.get_height() + 10
+    if round_number is not None:
+        sub_txt = f"Ronda: {round_number}"
+        sub_surf = info_font.render(sub_txt, True, (220, 220, 220))
+        sub_x = x_rect + ancho_rect // 2 - sub_surf.get_width() // 2
+        sub_y = players_start_y
+        screen.blit(sub_surf, (sub_x, sub_y))
+        players_start_y = sub_y + sub_surf.get_height() + 12
+
+    # Listado de lugares (primero = menor puntaje)
+    for i, jugador in enumerate(jugadores_ordenados):
+        lugar = i + 1
+        nombre = getattr(jugador, "playerName", f"Jugador {lugar}")
+        puntos = getattr(jugador, "playerPoints", 0)
+        linea = f"{ordinal_es(lugar)} Lugar: {nombre} — {puntos} pts"
+        y_line = players_start_y + i * espacio_linea
+
+        surf = place_font.render(linea, True, (240, 240, 200))
+        rx = x_rect + ancho_rect // 2 - surf.get_width() // 2
+        ry = y_line
+        # borde ligero
+        for ox, oy in [(-1,0),(1,0),(0,-1),(0,1)]:
+            screen.blit(place_font.render(linea, True, (0,0,0)), (rx+ox, ry+oy))
+        screen.blit(surf, (rx, ry))
+
+    # Info para continuar (vacío o personalizado)
+    info_txt = ""
+    info_surf = info_font.render(info_txt, True, (200,200,200))
+    info_rect = info_surf.get_rect(center=(x_rect + ancho_rect//2, y_rect + alto_rect - 18))
+    screen.blit(info_surf, info_rect.topleft)
 
 def actualizar_indices_visual_hand(visual_hand):
     """
@@ -3542,9 +4411,8 @@ def process_received_messagesUi2():
                 if isinstance(data, dict) and data.get("type") in ["ELECTION_CARDS","SELECTION_UPDATE", "ESTADO_CARTAS", "ORDEN_COMPLETO"]:
                     network_manager.game_state.update(data)
                     print(f"Estado del juego actualizado: {network_manager.game_state}")
-                elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA", "FIN_CICLO_COMPRA"]:
+                elif isinstance(data, dict) and data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA", "FIN_CICLO_COMPRA", "INSERTAR_CARTA"]:
                     network_manager.moves_gameServer.append(data)
-                    print(f" Jugada del jugador recibida:{data.get("type"),network_manager.moves_gameServer}")
                 # Si es otro tipo de estructura/mensaje no clasificado
                 else:
                     network_manager.incoming_messages.append(("raw", data)) # Opcional: para mensajes no clasificados
@@ -3575,6 +4443,23 @@ def recalcular_posiciones_eleccion(cartas_eleccion, WIDTH, HEIGHT):
             CARD_WIDTH, 
             CARD_HEIGHT
         )
+
+
+def play_risa_if_joker(cartas):
+    global mostrar_joker_fondo, tiempo_joker_fondo
+    risa_sound_path = os.path.join(ASSETS_PATH, "sonido", "risa.wav")
+    risa_sound = pygame.mixer.Sound(risa_sound_path)
+    for carta in cartas:
+        if hasattr(carta, "joker") and carta.joker:
+            risa_sound.play()
+            mostrar_joker_fondo = True
+            tiempo_joker_fondo = pygame.time.get_ticks()
+            break
+
+joker_fondo_img = pygame.image.load(os.path.join(ASSETS_PATH, "joker_fondo.png")).convert()
+joker_fondo_img = pygame.transform.scale(joker_fondo_img, (WIDTH, HEIGHT))
+mostrar_joker_fondo = False
+tiempo_joker_fondo = 0
 
 if __name__ == "__main__":
     #ocultar_elementos_visual(screen, fondo_img)  # Solo muestra el fondo al inicio
