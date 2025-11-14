@@ -2233,7 +2233,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 mensaje_tiempo = time.time()
                                 continue
                             # Llama al método del jugador para descartar (se espera que devuelva lista de Card o None)
-                            cartas_descartadas = jugador_local.discardCard(selected_cards, round)
+                            cartas_descartadas = jugador_local.discardCard(selected_cards, round, [p for p in players if p != jugador_local])
 
                             # Asegurarse que cartas_descartadas es una lista de Card (o False/None si fallo)
                             if not cartas_descartadas:

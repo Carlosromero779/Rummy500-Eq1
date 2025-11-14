@@ -80,14 +80,118 @@ class Player:
                 # Limpiamos la lista de intercambio para reiniciar el proceso.
                 self.playerCardsToEx.clear()    
                 
-
+    #empiezan cambios por aqui
+    def canExtendTrio(self, card, plays):
+        """
+        Verifica si la carta puede extender algún trío en la lista de jugadas 'plays'.
+        Incluye validación interna de si cada jugada es un trío válido.
+        similar a la logica de ins
+        """
+        for play in plays:
+            # Validación interna: verificar si 'play' es un trío válido
+            if len(play) < 3:
+                continue
+            noJokers = [c.value for c in play if not c.joker]
+            if len(set(noJokers)) != 1:  # No todos los valores no-Joker son iguales
+                continue
+            
+            # Verificar si la carta puede extender este trío
+            common_value = noJokers[0]
+            if card.joker:
+                jokersInTrio = sum(1 for c in play if c.joker)
+                if jokersInTrio < 1:
+                    return True
+            else:
+                if card.value == common_value:
+                    return True
+        return False
+        
+    def canExtendStraight(self, card, plays):
+        """
+        Verifica si la carta puede extender alguna seguidilla en la lista de jugadas 'plays'.
+        Incluye validación interna de si cada jugada es una seguidilla válida.
+        """
+        valueToRank = {"A": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
+                       "8": 8, "9": 9, "10": 10, "J": 11, "Q": 12, "K": 13}
+        
+        def rank(c, highAs=False):
+            if getattr(c, "joker", False):
+                return -1
+            if c.value == "A" and highAs:
+                return 14
+            return valueToRank.get(c.value, -1)
+        
+        for play in plays:
+            # Validación interna: verificar si 'play' es una seguidilla válida
+            if len(play) < 4:
+                continue
+            noJokerSuit = [c.type for c in play if not c.joker]
+            if len(set(noJokerSuit)) != 1:  # Todos los palos no-Joker deben ser iguales
+                continue
+            
+            # Verificar secuencia con ranks
+            common_suit = noJokerSuit[0]
+            isValidStraight = False
+            for highAs in (False, True):
+                ranks = [rank(c, highAs) for c in play if rank(c, highAs) != -1]
+                if len(ranks) < len(play) - 1:  # Demasiados Jokers
+                    continue
+                ranks.sort()
+                if all(ranks[i] + 1 == ranks[i+1] for i in range(len(ranks)-1)):
+                    isValidStraight = True
+                    break
+            if not isValidStraight:
+                continue
+            
+            # Verificar si la carta puede extender esta seguidilla
+            if card.joker:
+                suit = common_suit
+            else:
+                if card.type != common_suit:
+                    continue
+            
+            for highAs in (False, True):
+                sorted_straight = sorted([c for c in play if rank(c, highAs) != -1], key=lambda c: rank(c, highAs))
+                if not sorted_straight:
+                    continue
+                firstRank = rank(sorted_straight[0], highAs)
+                lastRank = rank(sorted_straight[-1], highAs)
+                cardRank = rank(card, highAs)
+                
+                if cardRank == firstRank - 1 or cardRank == lastRank + 1:
+                    return True
+        return False
         
     #Mét. para descartar una carta de la playerHand del jugador. Sólo se ejecuta si el jugador tiene una única
     #carta seleccionada previamente.
-    def discardCard(self, selectedDiscards, round):
-
-        #Verificamos la cantidad de cartas seleccionadas.
-        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn and self.downHand:
+    def discardCard(self, selectedDiscards, round, otherPlayers):
+        """
+        Modificado para verificar si alguna carta seleccionada puede extender una jugada en la mesa.
+        - otherPlayers: Lista de otros jugadores (excluyendo al actual) para acceder a sus jugadas bajadas.
+        """
+        # Verificar si alguna carta puede extender jugadas propias
+        for card in selectedDiscards:
+            if self.downHand and self.playMade and not card.joker:  # Solo si el jugador se ha bajado
+                if self.canExtendTrio(card, self.playMade):
+                    print(f"No se puede descartar {card}: puede extender tu trio.")
+                    return None
+                if self.canExtendStraight(card, self.playMade) and not card.joker:
+                    print(f"No se puede descartar {card}: puede extender tu seguidilla.")
+                    return None
+        # Verificar si alguna carta puede extender una jugada bajada de otros jugadores
+        for card in selectedDiscards:
+            for player in otherPlayers:
+                
+                if player.downHand and player.playMade and not card.joker:  # Solo si se ha bajado y tiene jugadas
+                    if self.canExtendTrio(card, player.playMade):
+                        print(f"No se puede descartar {card}: puede extender un trío en la jugada de {player.playerName}.")
+                        return None
+                    elif self.canExtendStraight(card, player.playMade) and not card.joker:
+                        print(f"No se puede descartar {card}: puede extender una seguidilla en la jugada de {player.playerName}.")
+                        return None
+        
+        # hasta aqui los cambios :))))
+        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn:
 
             #Si seleccionaron dos y la primera es un Joker, se retorna una lista con ambas cartas.
             if selectedDiscards[0].joker:
