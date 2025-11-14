@@ -3171,13 +3171,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # draw_label(tablero_rect, "Tablero y posiciones")
         cuadros_interactivos["Tablero y posiciones"] = tablero_rect
 
-        # --- Botón "Tablero y posiciones" ---
-        tablero_img_path = os.path.join(ASSETS_PATH, "tablero_de_posiciones.png")
-        if os.path.exists(tablero_img_path):
-            tablero_img = pygame.image.load(tablero_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(tablero_img, (tablero_rect.width, tablero_rect.height))
-            screen.blit(img, tablero_rect.topleft)
-        cuadros_interactivos["Tablero y posiciones"] = tablero_rect
+
 
         # --- Mostrar cartas del jugador 1 en J1 (interactivas y auto-organizadas) ---
         # Usar visual_hand en vez de jugador_local.playerHand
