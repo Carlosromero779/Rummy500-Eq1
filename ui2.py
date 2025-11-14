@@ -76,11 +76,15 @@ cartas_ocultas = set()
 zona_cartas_snapshot = None
 
 mazo_descarte = []  # Lista para el mazo de descarte
+mostrar_boton_descartar = False
+mostrar_boton_bajarse = False
+mostrar_boton_comprar = False
 
 # guarda la última carta tomada y por quién (para impedir descartarla en el mismo turno)
 last_taken_card = None
 last_taken_player = None
 #Cambio Boton Menu / Salir
+
 
 
 
@@ -180,7 +184,7 @@ def can_discard(player, cards):
     for c in items:
         # compara por identidad primero, luego por igualdad de string/valor
         try:
-            if c is last_taken_card or c == last_taken_card:
+            if (c is last_taken_card or c == last_taken_card) and len(items) >= 1:
                 return False
         except Exception:
             if str(c) == str(last_taken_card):
@@ -210,6 +214,7 @@ def string_to_card(card_string_or_object):
     # valor == todo menos último char, palo == último char
     value = card_string_or_object[:-1]
     suit = card_string_or_object[-1]
+    
     return Card(value, suit)
 
 def resolve_play(jugador, raw_play, play_index=None):
@@ -295,8 +300,11 @@ def safe_insert_card(jugador, target_player, idx_jugada, card_to_insert, positio
     try:
         # Si tu Player.insertCard espera trabajar con dict y asume 'straight' por defecto,
         # esto funcionará. Si insertCard necesita un subtype explícito, habría que pasarlo.
-        jugador.insertCard(targetPlayer=target_player, targetPlayIndex=idx_jugada, cardToInsert=card_to_insert, position=position)
-        return True
+        result = jugador.insertCard(targetPlayer=target_player, targetPlayIndex=idx_jugada, cardToInsert=card_to_insert, position=position)
+        if result:
+            return True
+        else:
+            return False
     except Exception as e:
         print("safe_insert_card: excepción al llamar insertCard:", e)
         return False
@@ -532,8 +540,8 @@ def choose_insert_target_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, fase):
         buttons = [("Trio", pygame.Rect(x + padding, y + h - padding - btn_h, btn_w + 40, btn_h)),
                    ("Seguidilla", pygame.Rect(x + w - padding - btn_w - 40, y + h - padding - btn_h, btn_w + 40, btn_h))]
     elif fase == "ronda2":
-        buttons = [("Seguidilla 2", pygame.Rect(x + padding, y + h - padding - btn_h, btn_w, btn_h)),
-                   ("Seguidilla 1", pygame.Rect(x + w - padding - btn_w, y + h - padding - btn_h, btn_w, btn_h))]
+        buttons = [("Seguidilla 2", pygame.Rect(x + padding, y + h - padding - btn_h, btn_w + 55, btn_h)),
+                   ("Seguidilla 1", pygame.Rect(x + w - padding - btn_w - 50, y + h - padding - btn_h, btn_w + 55, btn_h))]
     elif fase == "ronda3":
         spacing = (w - 3 * btn_w) // 4
         buttons = [("Trio 1", pygame.Rect(x + spacing, y + h - padding - btn_h, btn_w, btn_h)),
@@ -1191,8 +1199,75 @@ def draw_horizontal_rain_hand_rotated(player, rect):
         if card_rect.bottom <= rect.bottom:
             screen.blit(img, card_rect.topleft)
 
+def update_descartar_visibility(zona_cartas, roundThree, roundFour):
+    """
+    Botón 'Descartar':
+    - Rondas 1/2 → visible si zona_cartas[2] tiene al menos 1 carta.
+    - Rondas 3/4 → visible si zona_cartas[3] tiene al menos 1 carta.
+    """
+    global mostrar_boton_descartar
+
+    try:
+        if zona_cartas is None:
+            mostrar_boton_descartar = False
+            return
+
+        if roundThree or roundFour:
+            # revisar zona 3
+            mostrar_boton_descartar = len(zona_cartas) > 3 and len(zona_cartas[3]) > 0
+        else:
+            # revisar zona 2
+            mostrar_boton_descartar = len(zona_cartas) > 2 and len(zona_cartas[2]) > 0
+
+    except Exception:
+        mostrar_boton_descartar = False
+def update_bajarse_visibility(zona_cartas, roundThree, roundFour):
+    """
+    Reglas:
+    - En rondas 1/2 → zonas 0 y 1 deben tener al menos 1 carta.
+    - En rondas 3/4 → zonas 0, 1 y 2 deben tener al menos 1 carta.
+    """
+    global mostrar_boton_bajarse
+    try:
+        # Validar existencia de zona_cartas
+        if 'zona_cartas' not in globals() or zona_cartas is None:
+            mostrar_boton_bajarse = False
+            return
+
+        # Rondas 3 o 4 → revisar zonas 0,1,2
+        if roundThree or roundFour:
+            if len(zona_cartas) > 2:
+                mostrar_boton_bajarse = (
+                    len(zona_cartas[0]) > 0 and
+                    len(zona_cartas[1]) > 0 and
+                    len(zona_cartas[2]) > 0
+                )
+            else:
+                mostrar_boton_bajarse = False
+            return
+
+        # Rondas 1 o 2 → solo revisar zonas 0 y 1
+        if len(zona_cartas) > 1:
+            mostrar_boton_bajarse = (
+                len(zona_cartas[0]) > 0 and
+                len(zona_cartas[1]) > 0
+            )
+        else:
+            mostrar_boton_bajarse = False
+
+    except Exception:
+        mostrar_boton_bajarse = False
+def update_comprar_visibility():
+    """
+    El botón 'Comprar carta' será visible solo mientras la flag mostrar_boton_comprar sea True.
+    """
+    global mostrar_boton_comprar
+    # Simplemente devolvemos la flag, no hay validación de zona ni ronda
+    return mostrar_boton_comprar
+
 
 def main(manager_de_red): # <-- Acepta el manager de red
+    global mostrar_boton_comprar
     global screen, WIDTH, HEIGHT, fondo_img, organizar_habilitado, fase
     global network_manager, jugadores , players, cartas_eleccion
     global cuadros_interactivos, cartas_ref, zona_cartas, visual_hand
@@ -1333,6 +1408,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
     while running:
         # --- SOLO FASE DE ELECCIÓN ---
+        update_descartar_visibility(zona_cartas, roundThree, roundFour)
+        update_comprar_visibility()
+        update_bajarse_visibility(zona_cartas, roundThree, roundFour)
         if fase == "eleccion":
             screen.blit(fondo_img, (0, 0))  # Nuevo pero se puede quedar :)
 
@@ -1451,8 +1529,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     p.cardDrawn = False
                 # Inicializacion del mazo...
                 round = startRound(players, screen)[0]
-                print(f"deck para la ronda: {[c for c in round.pile]}")
-                print(f"descartes de la ronda: {[c for c in round.discards]}")
+                print(f"deck para la ronda: {[str(c) for c in round.pile]}")
+                print(f"descartes de la ronda: {[str(c) for c in round.discards]}")
                 for c in round.discards:
                     mazo_descarte.append(c)
                 deckForRound = round.pile
@@ -1591,12 +1669,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 deckForRound = mazoBocaAbajo #round.pile
 
             elif isinstance(msg,dict) and msg.get("type")=="PASAR_DESCARTE":
+                mostrar_boton_comprar = True  
+
                 player_id_que_pasoD = msg.get("playerId")
                 player_name_que_pasoD = msg.get("playerName")
 
                 waiting = True
                 time_waiting = time.time()
                 print(f"Waiting y time_waiting: ({waiting}, {time_waiting})")
+                mostrar_boton_comprar = True  
+
                 
                 print(f"Mensaje de PASAR DESCARTE recibido del Player ID: {player_id_que_pasoD}")
                 for p in players:
@@ -1604,6 +1686,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         p.playerPass = True
 
                 if not jugador_local.isHand:
+                    mostrar_boton_comprar = True  
                     mensaje_temporal = f"{player_name_que_pasoD} pasó del descarte. Compra habilitada temporalmente."
                     mensaje_tiempo = time.time()
 
@@ -1612,14 +1695,13 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 player_name_que_compraC = msg.get("playerName")
                 next_idx_player_isHand = msg.get("next_idx_player_isHand")
                 idx_player_jugador_local = msg.get("idx_player_jugador_local")
-                
                 print(f"Mensaje de INICIAR COMPRA recibido del Player ID: {player_id_que_compraC}")
+
 
                 noBuy = False
 
                 """ for i in range(next_idx_player_isHand, idx_player_jugador_local):
                     players[i].playerTurn = True """
-
                 mensaje_temporal = f"{player_name_que_compraC} quiere comprar la carta."
                 mensaje_tiempo = time.time()
 
@@ -1627,6 +1709,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 player_id_que_finalizoC = msg.get("playerId")
                 
                 print(f"Mensaje de FIN CICLO COMPRA recibido del Player ID: {player_id_que_finalizoC}")
+                mostrar_boton_comprar = False  
 
                 bought = True
                 waiting = False
@@ -2081,6 +2164,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 if roundThree or roundFour:
                                     zona_cartas[2] = []
                                     zona_cartas[2].clear()
+                            if not send and roundFour and jugador_local.cardDrawn:
+                                mensaje_temporal = "En la Ronda 4 No te puedes bajar y quedar con cartas en la mano"
+                                mensaje_tiempo = time.time()
+
+                            # Actualiza visual_hand y permite organizar
+                            visual_hand.clear()
+                            for carta in jugador_local.playerHand:
+                                visual_hand.append(carta)
+                            reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                            organizar_habilitado = True
                             # Actualiza visual_hand y permite organizar
                             visual_hand.clear()
                             for carta in jugador_local.playerHand:
@@ -2130,7 +2223,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 numero = 2
                             elif roundThree or roundFour:
                                 numero = 3
-                            if zona_cartas[numero]:
+                            if len(zona_cartas[numero]) >= 1:
                                 # si hay cartas arrastradas al área de descarte, úsalas
                                 selected_cards = list(zona_cartas[numero])
                             elif selected_card is not None:
@@ -2161,7 +2254,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                         jugador_local.playerHand.append(c)
                                 cartas_ocultas.clear()
                                 zona_cartas[numero] = []
-                            elif not can_discard(jugador_local, cartas_descartadas):
+                            elif not can_discard(jugador_local, cartas_descartadas) and len(jugador_local.playerHand) > 1:
                                 mensaje_temporal = "No puedes descartar la carta que acabas de tomar."
                                 mensaje_tiempo = time.time()
                                 # devolver cartas a la mano si fue necesario
@@ -2171,7 +2264,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 cartas_ocultas.clear()
                                 zona_cartas[numero] = []
                                 # jugador_local.isHand = True
-                            elif jugador_local.isHand and jugador_local.canDiscard:
+                            elif (jugador_local.isHand and jugador_local.canDiscard) or (not can_discard(jugador_local, cartas_descartadas) and len(jugador_local.playerHand) == 1):
                                 # descarte válido: sincronizar vistas y limpiar bloqueo
                                 visual_hand = compactar_visual_hand(visual_hand)
                                 actualizar_indices_visual_hand(visual_hand)
@@ -2489,7 +2582,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                             else: 
                                                 print("Mensaje vacio... No enviado")
                                     else:
-                                        mensaje_temporal = f"No se pudo insertar en {eleccion}. Revisa consola."
+                                        mensaje_temporal = f"No se pudo insertar en {eleccion}."
                                     mensaje_tiempo = time.time()
 
                                 # --- SEGUIDILLAS ---
@@ -2541,7 +2634,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                     print("Mensaje vacio... No enviado")
                                         else:
                                             mensaje_tiempo = time.time()
-                                            mensaje_temporal = "No se pudo insertar al Inicio. Revisa consola."
+                                            mensaje_temporal = "No se pudo insertar al Inicio de la seguidilla."
                                     elif straight_accion == "end":
                                         ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, "end", target_subtype)
                                         if ok:
@@ -2572,7 +2665,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                     print("Mensaje vacio... No enviado")
                                         else:
                                             mensaje_tiempo = time.time()
-                                            mensaje_temporal = "No se pudo insertar al Final. Revisa consola."
+                                            mensaje_temporal = "No se pudo insertar al Final de la seguidilla."
                                     elif straight_accion == "replace_joker":
                                         ok = safe_insert_card(jugador_local, target_player, play_index, carta_obj, None, target_subtype)
                                         if ok:
@@ -2603,7 +2696,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                     print("Mensaje vacio... No enviado")
                                         else:
                                             mensaje_tiempo = time.time()
-                                            mensaje_temporal = "No se pudo sustituir el Joker. Revisa consola."
+                                            mensaje_temporal = "No se pudo sustituir el Joker de la seguidilla."
                                     else:
                                         mensaje_tiempo = time.time()
                                         mensaje_temporal = "Operación Seguidilla cancelada."
@@ -2637,7 +2730,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                 visual_hand.remove(carta_arrastrada)
                                             reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                         else:
-                                            mensaje_temporal = "Error al insertar en inicio. Revisa consola."
+                                            mensaje_temporal = "Error al insertar en inicio. ."
                                             mensaje_tiempo = time.time()
                                     insertado_en_jugada = True
                                     break
@@ -2650,7 +2743,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                 visual_hand.remove(carta_arrastrada)
                                             reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                         else:
-                                            mensaje_temporal = "Error al insertar en final. Revisa consola."
+                                            mensaje_temporal = "Error al insertar en final. ."
                                             mensaje_tiempo = time.time()
                                     insertado_en_jugada = True
                                     break
@@ -2685,7 +2778,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                             visual_hand.remove(carta_arrastrada)
                                                         reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                                     else:
-                                                        mensaje_temporal = "Error al sustituir Joker. Revisa consola."
+                                                        mensaje_temporal = "Error al sustituir Joker. ."
                                                         mensaje_tiempo = time.time()
                                                 insertado_en_jugada = True
                                                 break
@@ -2707,7 +2800,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                             visual_hand.remove(carta_arrastrada)
                                                         reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                                     else:
-                                                        mensaje_temporal = "Error al sustituir Joker. Revisa consola."
+                                                        mensaje_temporal = "Error al sustituir Joker. ."
                                                         mensaje_tiempo = time.time()
                                                 insertado_en_jugada = True
                                                 break
@@ -3006,7 +3099,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
             boton_h
         )
         # --- Botón "Bajarse" ---
-        bajarse_visible = True  # Controla la visibilidad del botón "Bajarse"
+        bajarse_visible = mostrar_boton_bajarse  
         if bajarse_visible:
             bajarse_img_path = os.path.join(ASSETS_PATH, "bajarse.png")
             if os.path.exists(bajarse_img_path):
@@ -3016,45 +3109,52 @@ def main(manager_de_red): # <-- Acepta el manager de red
             else:
                 draw_transparent_rect(screen, (180, 180, 220, 110), bajarse_rect, border=1)
                 draw_label(bajarse_rect, "Bajarse")
+
             cuadros_interactivos["Bajarse"] = bajarse_rect
         else:
             cuadros_interactivos.pop("Bajarse", None)
 
         # --- Botón "Descartar" ---
         descartar_rect = pygame.Rect(
-            x_descarte,
-            boton_y,
-            boton_w_fino,
-            boton_h
+            x_descarte,   # posición X del botón
+            boton_y,      # posición Y del botón
+            boton_w_fino, # ancho
+            boton_h       # alto
         )
-        # --- Botón "Descartar" ---
-        descartar_img_path = os.path.join(ASSETS_PATH, "descartar.png")
-        if os.path.exists(descartar_img_path):
-            descartar_img = pygame.image.load(descartar_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(descartar_img, (boton_w_fino, boton_h))
-            screen.blit(img, descartar_rect.topleft)
+        descartar_visible = mostrar_boton_descartar
+        if descartar_visible:
+            descartar_img_path = os.path.join(ASSETS_PATH, "descartar.png")
+            if os.path.exists(descartar_img_path):
+                descartar_img = pygame.image.load(descartar_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(descartar_img, (boton_w_fino, boton_h))
+                screen.blit(img, descartar_rect.topleft)
+            else:
+                draw_transparent_rect(screen, (180, 180, 220, 110), descartar_rect, border=1)
+                draw_label(descartar_rect, "Descartar")
+            cuadros_interactivos["Descartar"] = descartar_rect
         else:
-            draw_transparent_rect(screen, (180, 180, 220, 110), descartar_rect, border=1)
-            draw_label(descartar_rect, "Descartar")
-        cuadros_interactivos["Descartar"] = descartar_rect
+            cuadros_interactivos.pop("Descartar", None)
+        
+        if mostrar_boton_comprar:
+            comprar_rect = pygame.Rect(
+                (x_tomar_descarte + x_tomar_carta + cuadro_w_carta) // 2 - boton_w_carta // 2,
+                boton_y,
+                boton_w_carta,
+                boton_h
+            )
+            comprar_img_path = os.path.join(ASSETS_PATH, "comprar_carta.png")
+            if os.path.exists(comprar_img_path):
+                comprar_img = pygame.image.load(comprar_img_path).convert_alpha()
+                img = pygame.transform.smoothscale(comprar_img, (boton_w_carta, boton_h))
+                screen.blit(img, comprar_rect.topleft)
+            else:
+                draw_transparent_rect(screen, (180, 180, 220, 110), comprar_rect, border=1)
+                draw_label(comprar_rect, "Comprar carta")
 
-        # --- Botón "Comprar carta" ---
-        comprar_rect = pygame.Rect(
-            (x_tomar_descarte + x_tomar_carta + cuadro_w_carta) // 2 - boton_w_carta // 2,
-            boton_y,
-            boton_w_carta,
-            boton_h
-        )
-        comprar_img_path = os.path.join(ASSETS_PATH, "comprar_carta.png")
-        if os.path.exists(comprar_img_path):
-            comprar_img = pygame.image.load(comprar_img_path).convert_alpha()
-            img = pygame.transform.smoothscale(comprar_img, (boton_w_carta, boton_h))
-            screen.blit(img, comprar_rect.topleft)
+            cuadros_interactivos["Comprar carta"] = comprar_rect
         else:
-            draw_transparent_rect(screen, (180, 180, 220, 110), comprar_rect, border=1)
-            draw_label(comprar_rect, "Comprar carta")
-        cuadros_interactivos["Comprar carta"] = comprar_rect
-
+            # Si la flag es False, removemos el botón de los interactivos
+            cuadros_interactivos.pop("Comprar carta", None)
         # --- Cuadros: Trio, Seguidilla, Descarte, Tomar descarte, Tomar carta (todos alineados y centrados verticalmente) ---
         combinaciones_requeridas = []
         if fase == "ronda1":
@@ -3748,11 +3848,38 @@ def main(manager_de_red): # <-- Acepta el manager de red
         #                 screen.blit(img, card_rect.topleft)
 
         # Al final del while running, antes de pygame.display.flip(), agrega:
+        # Mensaje temporal: blanco, más grande, wrap por palabra cada 35 caracteres y un poco más abajo
         if mensaje_temporal and time.time() - mensaje_tiempo < 5:
-            font_videojuego = pygame.font.SysFont("PressStart2P", 28)  # O el nombre de tu fuente de videojuego
-            texto = font_videojuego.render(mensaje_temporal, True, (255, 255, 0))
-            rect = texto.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 180))
-            screen.blit(texto, rect)
+            def wrap_preserve_words(text, max_chars=35):
+                words = text.split()
+                if not words:
+                    return []
+                lines = []
+                cur = words[0]
+                for w in words[1:]:
+                    if len(cur) + 1 + len(w) <= max_chars:
+                        cur += " " + w
+                    else:
+                        lines.append(cur)
+                        cur = w
+                lines.append(cur)
+                return lines
+
+            font_msg = get_game_font(18) 
+            lines = wrap_preserve_words(mensaje_temporal, 35)
+            line_h = font_msg.get_linesize()
+            base_x = WIDTH // 2
+            base_y = HEIGHT // 2 + 160  
+            total_h = line_h * len(lines)
+            start_y = base_y - total_h // 2
+
+            for i, line in enumerate(lines):
+                surf = font_msg.render(line, True, (255, 255, 255))
+                rect = surf.get_rect(center=(base_x, start_y + i * line_h))
+                # borde negro alrededor (8 direcciones)
+                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                    screen.blit(font_msg.render(line, True, ( (165, 42, 42))), (rect.x + dx, rect.y + dy))
+                screen.blit(surf, rect)
         elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
             mensaje_temporal = ""
         # Dibujar siempre los botones Ronda / Turno / Menú con las imágenes cacheadas (evita parpadeo)

@@ -132,9 +132,10 @@ class Player:
                 selectedDiscards = []
                 self.discarded = True
                 # self.isHand = False
+
                 return [cardDiscarded]
             except ValueError:
-                print("No se ha seleccionado ninguna carta en la zona de descartes")
+                print("La carta que intenta descartar no pertenece a la mano del jugador")
                 return []
         #Si el jugador no seleccionó ninguna carta, retornamos None.
         else:
@@ -284,8 +285,16 @@ class Player:
             return needed_jokers <= len(jokers)
 
         # Debe estar ordenada en al menos un modo (As bajo o As alto)
-        if checkStraightInGivenOrder(False) or checkStraightInGivenOrder(True):
-            return True
+        if checkStraightInGivenOrder(False):
+            if cards[0].joker and cards[1].value == "A":
+                return False
+            else:
+                return True
+        elif checkStraightInGivenOrder(True):
+            if cards[-1].joker and cards[-2].value == "A":
+                return False
+            else:
+                return True
 
         # Caso especial: secuencia con As al final después de K
         values = [c.value for c in cards if not c.joker]
