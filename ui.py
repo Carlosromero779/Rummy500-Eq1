@@ -6,6 +6,11 @@ import time
 from network import NetworkManager
 import sys
 
+icon = pygame.image.load("assets/icon.png")  # Reemplaza con la ruta correcta a tu imagen
+pygame.display.set_icon(icon)
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("RUMMY 500")
+
 class Button:
     def __init__(self, image, pos, text_input, font, base_color, hovering_color, size=(250, 100), scale_factor=1.1):
         self.image = image
