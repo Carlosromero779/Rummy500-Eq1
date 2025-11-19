@@ -81,7 +81,7 @@ class Player:
                 self.playerCardsToEx.clear()    
                 
     #empiezan cambios por aqui
-    def canExtendTrio(self, card, plays):
+    '''def canExtendTrio(self, card, plays):
         """
         Verifica si la carta puede extender algún trío en la lista de jugadas 'plays'.
         Incluye validación interna de si cada jugada es un trío válido.
@@ -160,17 +160,17 @@ class Player:
                 
                 if cardRank == firstRank - 1 or cardRank == lastRank + 1:
                     return True
-        return False
+        return False'''
         
     #Mét. para descartar una carta de la playerHand del jugador. Sólo se ejecuta si el jugador tiene una única
     #carta seleccionada previamente.
-    def discardCard(self, selectedDiscards, round, otherPlayers):
+    def discardCard(self, selectedDiscards, round):#def discardCard(self, selectedDiscards, round, otherPlayers): asi para lo de ana
         """
         Modificado para verificar si alguna carta seleccionada puede extender una jugada en la mesa.
         - otherPlayers: Lista de otros jugadores (excluyendo al actual) para acceder a sus jugadas bajadas.
         """
         # Verificar si alguna carta puede extender jugadas propias
-        for card in selectedDiscards:
+        '''for card in selectedDiscards:
             if self.downHand and self.playMade and not card.joker:  # Solo si el jugador se ha bajado
                 if self.canExtendTrio(card, self.playMade):
                     print(f"No se puede descartar {card}: puede extender tu trio.")
@@ -188,7 +188,7 @@ class Player:
                         return None
                     elif self.canExtendStraight(card, player.playMade) and not card.joker:
                         print(f"No se puede descartar {card}: puede extender una seguidilla en la jugada de {player.playerName}.")
-                        return None
+                        return None'''
         
         # hasta aqui los cambios :))))
         if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn:
