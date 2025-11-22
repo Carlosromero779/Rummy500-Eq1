@@ -166,7 +166,7 @@ class NetworkManager:
         try:
             while self.running:
                 try:
-                    data = conn.recv(4096)
+                    data = conn.recv(6114)
                     if not data:
                         break
                         
@@ -352,7 +352,7 @@ class NetworkManager:
         """Recibe datos del servidor"""
         while self.running and self.player:
             try:
-                data = self.player.recv(4096) #2048->4096
+                data = self.player.recv(6114) #2048->4096
                 if not data:
                     print("Conexion cerrada por el servidor")
                     break
