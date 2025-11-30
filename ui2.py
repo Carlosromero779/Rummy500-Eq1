@@ -1907,7 +1907,24 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                 mensaje_temporal = f"{player_name_que_compro} compro la carta."
                 mensaje_tiempo = time.time()
+            
+            elif isinstance(msg, dict) and msg.get("type") == "INSERTAR_CARTA":
+                mano_restante = msg.get("playerHand")
+                jugadas_visuales = msg.get("jugadas_bajadas")
+                jugadas_logicas = msg.get("playMade")
+                id_target_player = msg.get("playerId")
+                id_jugador_que_inserto = msg.get("playerId2")
+                received_round = msg.get("round")
 
+                for p in players:
+                    if p.playerId == id_target_player:
+                        p.jugadas_bajadas = jugadas_visuales
+                        p.playMade = jugadas_logicas
+                    if p.playerId == id_jugador_que_inserto:
+                        p.playerHand = mano_restante
+
+
+                
         # Fin procesar mensajes del juego...
         ###### SIgo aqui...
             
