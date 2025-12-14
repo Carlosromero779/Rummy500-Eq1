@@ -1537,13 +1537,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 # PARA PRUEBA...
                 print(f" Mano del jugador... {jugador_local.playerHand}")
                 '''if roundOne:
-                    jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
-                                                Card("5","♥"), Card("9","♦"), Card("9","♦"), 
-                                                Card("9","♦"),Card("9","♦"),Card("9","♦"),Card("2","♦"), Card("3","♦"), Card("4","♦"), Card("5","♦"),Card("9","♦"),Card("9","♦")] # Solo una carta para prueba
-                    round.hands[jugador_local.playerId] = jugador_local.playerHand '''
-                '''
-                if roundTwo:
-                    jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
+                        jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
+                                                    Card("5","♥"), Card("9","♦"), Card("9","♦"), 
+                                                    Card("9","♦"),Card("9","♦"),Card("Joker","", True)]
+                        round.hands[jugador_local.playerId] = jugador_local.playerHand '''  # Solo una carta para prueba,
+                '''if roundTwo:
+                        jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                 Card("5","♥"),
                                                 Card("2","♠"), Card("3","♠"), Card("4","♠"), 
                                                 Card("5","♠")]  # Solo una carta para prueba
@@ -1646,6 +1645,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         #pass
                 cardTakenD = carta_tomada
                 mazo_descarte = mazo_de_descarte   #round.discards #mazo_de_descarte
+                mazo_descarte = list(round.discards)#prueba
 
             elif isinstance(msg,dict) and msg.get("type")=="TOMAR_CARTA":
                 player_id_que_tomoC = msg.get("playerId")
@@ -1839,7 +1839,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 if received_round:
                     round = received_round
                     deckForRound = round.pile
-                    mazo_descarte = round.discards
+                    mazo_descarte = list(round.discards)
                 else:
                     # Crear una instancia mínima de Round y rellenar pilas si vienen en el mensaje
                     round = Round(players)
@@ -1863,7 +1863,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             break
 
                 cartas_descartadas = cartasDescartadas
-                mazo_descarte = mazo_de_descarte
+                #mazo_descarte = mazo_de_descarte #prueba
+                mazo_descarte = list(round.discards) #prueba
                 
             elif isinstance(msg,dict) and msg.get("type")=="COMPRAR_CARTA":   # Revisar la lógica... No vi la función append>>> Por es lo digo
                 mano_actualizada = msg.get("playerHand")
@@ -2064,7 +2065,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             #print(f"Mano del jugador al tomar la carta:........ {[str(c) for c in jugador_local.playerHand]}")
 
                             if mazo_descarte:
-                                mazo_descarte.pop()  # Quita la carta del mazo de descarte
+                                mazo_descarte = list(round.discards) #prueba
                             #jugador_local.playerHand.append(cardTakenD)
                             jugador_local.playerHand = round.hands[jugador_local.playerId]
                             register_taken_card(jugador_local, cardTakenD)
@@ -2110,8 +2111,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 resultado1 = jugador_local.isValidStraightF(zona_cartas[0])
                                 resultado2 = jugador_local.isValidTrioF(zona_cartas[1])
                             elif roundTwo:
-                                resultado1 = jugador_local.isValidStraightF(zona_cartas[0])
-                                resultado2 = jugador_local.isValidStraightF(zona_cartas[1])
+                                resultado1 = jugador_local.isValidStraightF(zona_cartas[1])
+                                resultado2 = jugador_local.isValidStraightF(zona_cartas[0])
 
                             elif roundThree:
                                 #resultado = jugador_local.getOff2(zona_cartas[0], zona_cartas[1])
@@ -2160,31 +2161,38 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             cartas_ocultas.clear()'''
                             if resultado1 and resultado2 and roundOne:  #Para la primera ronda 
                                 send = True
+                                sortedStraights = None
                                 #trios_bajados, seguidillas_bajadas = resultado
                                 # Guarda las jugadas bajadas en jugador_local.jugadas_bajadas
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if resultado1:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
-                                if resultado2:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
-                                for carta in zona_cartas[0]+ zona_cartas[1]:
+                                if jugador_local.sortedStraight(zona_cartas[0]) == True:
+                                    sortedStraights = zona_cartas[0]
+                                else:
+                                    sortedStraights = jugador_local.sortedStraight(zona_cartas[0])
+                                jugador_local.jugadas_bajadas.append(sortedStraights)
+                                jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                for carta in zona_cartas[0] + zona_cartas[1]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
                                         jugador_local.playerHand.remove(carta)
-                                jugador_local.playMade.append(zona_cartas[0])
+                                jugador_local.playMade.append(sortedStraights)
                                 jugador_local.playMade.append(zona_cartas[1])
                                 jugador_local.downHand =True
+                                organizar_habilitado = True
                                 cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
                                 zona_cartas[1] = []
                                 zona_cartas[1].clear()
+                                reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                 #Eliminamos las cartas de los espacios visuales, para que desaparezcan al pulsar el botón de bajarse
                             
                             elif resultado1 and resultado2 and roundTwo:
                             #elif resultado1 and resultado2 and roundTwo:  #Para la segunda ronda 
                                 send = True
+                                sortedStraights1 = None
+                                sortedStraights2 = None
                                 #seguidillas_bajadas, seguidillas2_bajadas = resultado
                                 #NoUsar , seguidillas_bajadas = resultado1
                                 #NoUsar , seguidillas2_bajadas = resultado2 
@@ -2192,33 +2200,41 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 # Guarda las jugadas bajadas en jugador_local.jugadas_bajadas
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if resultado1:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
-                                if resultado2:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
-                                for carta in zona_cartas[0]+ zona_cartas[1]:
+                                if jugador_local.sortedStraight(zona_cartas[1]) == True and jugador_local.sortedStraight(zona_cartas[0]) == True:
+                                    sortedStraights1 = zona_cartas[1]
+                                    sortedStraights2 = zona_cartas[0]
+                                elif jugador_local.sortedStraight(zona_cartas[1]) == True and jugador_local.sortedStraight(zona_cartas[0]) != True:
+                                    sortedStraights1 = zona_cartas[1]
+                                    sortedStraights2 = jugador_local.sortedStraight(zona_cartas[0])
+                                elif jugador_local.sortedStraight(zona_cartas[1]) != True and jugador_local.sortedStraight(zona_cartas[0]) == True:
+                                    sortedStraights1 = jugador_local.sortedStraight(zona_cartas[1])
+                                    sortedStraights2 = zona_cartas[0]
+                                else:
+                                    sortedStraights1 = jugador_local.sortedStraight(zona_cartas[1])
+                                    sortedStraights2 = jugador_local.sortedStraight(zona_cartas[0])
+                                jugador_local.jugadas_bajadas.append(sortedStraights1)
+                                jugador_local.jugadas_bajadas.append(sortedStraights2)
+                                for carta in zona_cartas[1]+ zona_cartas[0]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
                                         jugador_local.playerHand.remove(carta)
-                                jugador_local.playMade.append(zona_cartas[0])
-                                jugador_local.playMade.append(zona_cartas[1])
+                                jugador_local.playMade.append(sortedStraights1)
+                                jugador_local.playMade.append(sortedStraights2)
                                 jugador_local.downHand =True
+                                organizar_habilitado = True
                                 cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
                                 zona_cartas[1] = []
                                 zona_cartas[1].clear()
-                            
+                                reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                             elif resultado1 and resultado2 and resultado3 and roundThree:  #Para la tercera ronda 
                                 send = True
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if resultado1:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
-                                if resultado2:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
-                                if resultado3:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[2])
+                                jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                jugador_local.jugadas_bajadas.append(zona_cartas[2])
                                 for carta in zona_cartas[1]+ zona_cartas[0] + zona_cartas[2]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
@@ -2227,6 +2243,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 jugador_local.playMade.append(zona_cartas[0])
                                 jugador_local.playMade.append(zona_cartas[2])
                                 jugador_local.downHand =True
+                                organizar_habilitado = True
                                 cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
@@ -2234,26 +2251,29 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 zona_cartas[1].clear()
                                 zona_cartas[2] = []
                                 zona_cartas[2].clear()
-                                
+                                reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                 
                             elif resultado1 and resultado2 and resultado3 and roundFour and (len(zona_cartas[0])+len(zona_cartas[1])+len(zona_cartas[2]))==len(jugador_local.playerHand): 
                                 send = True
+                                sortedStraights = None
                                 if not hasattr(jugador_local, "jugadas_bajadas"):
                                     jugador_local.jugadas_bajadas = []
-                                if resultado1:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[1])
-                                if resultado2:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[0])
-                                if resultado3:
-                                    jugador_local.jugadas_bajadas.append(zona_cartas[2])
+                                if jugador_local.sortedStraight(zona_cartas[2]) == True:
+                                    sortedStraights = zona_cartas[2]
+                                else:
+                                    sortedStraights = jugador_local.sortedStraight(zona_cartas[2])
+                                jugador_local.jugadas_bajadas.append(zona_cartas[1])
+                                jugador_local.jugadas_bajadas.append(zona_cartas[0])
+                                jugador_local.jugadas_bajadas.append(sortedStraights)
                                 for carta in zona_cartas[1]+ zona_cartas[0] + zona_cartas[2]:
                                     if carta in visual_hand:
                                         visual_hand.remove(carta)
                                         jugador_local.playerHand.remove(carta)
                                 jugador_local.playMade.append(zona_cartas[1])
                                 jugador_local.playMade.append(zona_cartas[0])
-                                jugador_local.playMade.append(zona_cartas[2])
+                                jugador_local.playMade.append(sortedStraights)
                                 jugador_local.downHand =True
+                                organizar_habilitado = True
                                 cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
@@ -2261,23 +2281,76 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 zona_cartas[1].clear()
                                 zona_cartas[2] = []
                                 zona_cartas[2].clear()
+                                reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                             else:
-                                cartas_ocultas.clear()
+                                if roundOne:
+                                    if not resultado1 and not resultado2: 
+                                        mensaje_temporal = "La seguidilla y el trio no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and resultado2:
+                                        mensaje_temporal = "La seguidilla no es válida."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and not resultado2:
+                                        mensaje_temporal = "El trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                elif roundTwo:
+                                    if not resultado1 and not resultado2: 
+                                        mensaje_temporal = "Ambas seguidillas no son válidas."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and resultado2:
+                                        mensaje_temporal = "La primera seguidilla no es válida."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and not resultado2:
+                                        mensaje_temporal = "La segunda seguidilla no es válida."
+                                        mensaje_tiempo = time.time()
+                                elif roundThree:
+                                    if not resultado1 and not resultado2 and not resultado3: 
+                                        mensaje_temporal = "Los tres tríos no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and resultado2 and resultado3:
+                                        mensaje_temporal = "El primer trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and not resultado2 and resultado3:
+                                        mensaje_temporal = "El segundo trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and resultado2 and not resultado3:
+                                        mensaje_temporal = "El tercer trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                elif roundFour:
+                                    if not resultado1 and not resultado2 and not resultado3: 
+                                        mensaje_temporal = "Los dos tríos y la seguidilla no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and not resultado2 and resultado3:
+                                        mensaje_temporal = "Los dos tríos no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and resultado2 and not resultado3:
+                                        mensaje_temporal = "El primer trío y la seguidilla no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and not resultado2 and not resultado3:
+                                        mensaje_temporal = "El segundo trío y la seguidilla no son válidos."
+                                        mensaje_tiempo = time.time()
+                                    elif resultado1 and not resultado2 and resultado3:
+                                        mensaje_temporal = "El segundo trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                    elif not resultado1 and resultado2 and resultado3:
+                                        mensaje_temporal = "El primer trío no es válido."
+                                        mensaje_tiempo = time.time()
+                                '''cartas_ocultas.clear()
                                 zona_cartas[0] = []
                                 zona_cartas[0].clear()
                                 zona_cartas[1] = []
                                 zona_cartas[1].clear()
                                 if roundThree or roundFour:
                                     zona_cartas[2] = []
-                                    zona_cartas[2].clear()
+                                    zona_cartas[2].clear()'''
                             if not send and roundFour and jugador_local.cardDrawn:
                                 mensaje_temporal = "En la Ronda 4 No te puedes bajar y quedar con cartas en la mano"
                                 mensaje_tiempo = time.time()
 
 
-                            reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                            organizar_habilitado = True
-                            cartas_ocultas.clear()
+                            #reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+                            #organizar_habilitado = True
+                            #cartas_ocultas.clear()
 
                             msgBajarse = {
                                 "type":"BAJARSE",
@@ -2300,14 +2373,14 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         else:
                             mensaje_temporal = "Debes tomar una carta antes de bajarte."
                             mensaje_tiempo = time.time()
-                            cartas_ocultas.clear()
-                            zona_cartas[0] = []
+                            #cartas_ocultas.clear()
+                            '''zona_cartas[0] = []
                             zona_cartas[0].clear()
                             zona_cartas[1] = []
                             zona_cartas[1].clear()
                             if roundThree or roundFour:
                                     zona_cartas[2] = []
-                                    zona_cartas[2].clear()
+                                    zona_cartas[2].clear()'''
                     elif nombre in ("Descarte", "Descartar"):
                             # Determinar la carta seleccionada (click sobre Carta_x) o usar la zona de arrastre (zona_cartas[2])
                             selected_card = None
@@ -2330,17 +2403,60 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 mensaje_tiempo = time.time()
                                 continue
                             # Llama al método del jugador para descartar (se espera que devuelva lista de Card o None)
+                            if not can_discard(jugador_local, selected_cards):
+                                mensaje_temporal = "No puedes descartar la carta que acabas de tomar."
+                                mensaje_tiempo = time.time()
+                                cartas_ocultas.clear()
+                                zona_cartas[numero] = []
+                                continue
                             cartas_descartadas = jugador_local.discardCard(selected_cards, round) #discardCard(selected_cards, round, [p for p in players if p != jugador_local]) asi funciona para lo de ana
-
-                            # Asegurarse que cartas_descartadas es una lista de Card (o False/None si fallo)
-                            if not cartas_descartadas:
+                            if cartas_descartadas == '001':
+                                mensaje_temporal = "Solo puedes bajar 2 cartas si una de ellas es un Joker"
+                                mensaje_tiempo = time.time()
+                                cartas_ocultas.clear()
+                                zona_cartas[numero] = []
+                                continue
+                            elif cartas_descartadas == '002':
+                                mensaje_temporal = "Para poder descartar un joker, debes descartar también otra carta normal"
+                                mensaje_tiempo = time.time()
+                                cartas_ocultas.clear()
+                                zona_cartas[numero] = []
+                                continue
+                            elif cartas_descartadas == '003':
+                                mensaje_temporal = "No puedes quemar el mono si no te has bajado."
+                                mensaje_tiempo = time.time()
+                                cartas_ocultas.clear()
+                                zona_cartas[numero] = []
+                                continue
+                            elif cartas_descartadas =="004":
+                                mensaje_temporal = "Debes tomar una carta antes de descartar"
+                                mensaje_tiempo = time.time()
+                                cartas_ocultas.clear()
+                                zona_cartas[numero] = []
+                                continue
+                            elif not cartas_descartadas:
                                 # No se descartó: devolver visuales si hacía falta
                                 mensaje_temporal = "No se pudo descartar esa(s) carta(s)."
                                 mensaje_tiempo = time.time()
                                 cartas_ocultas.clear()
                                 zona_cartas[numero] = []
                                 continue
-
+                            else:
+                                pass
+                            # Asegurarse que cartas_descartadas es una lista de Card (o False/None si fallo)
+                            '''if not cartas_descartadas:
+                                if len(selected_cards) == 1:
+                                    # No se descartó: devolver visuales si hacía falta
+                                    mensaje_temporal = "No se pudo descartar esa(s) carta(s)."
+                                    mensaje_tiempo = time.time()
+                                    cartas_ocultas.clear()
+                                    zona_cartas[numero] = []
+                                elif len(selected_cards) > 1 and not jugador_local.downHand:
+                                    mensaje_temporal = "No puedes quemar el mono si no te has bajado."
+                                    mensaje_tiempo = time.time()
+                                    cartas_ocultas.clear()
+                                    zona_cartas[numero] = []
+                                continue'''
                             # Validaciones de turno y regla "no descartar carta tomada este turno"
                             if not jugador_local.isHand:
                                 mensaje_temporal = "No puedes descartar si no es tu turno."
@@ -2351,16 +2467,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                         jugador_local.playerHand.append(c)
                                 cartas_ocultas.clear()
                                 zona_cartas[numero] = []
-                            elif not can_discard(jugador_local, cartas_descartadas) and len(jugador_local.playerHand) > 1:
-                                mensaje_temporal = "No puedes descartar la carta que acabas de tomar."
-                                mensaje_tiempo = time.time()
-                                # devolver cartas a la mano si fue necesario
-                                for c in cartas_descartadas:
-                                    if c not in jugador_local.playerHand:
-                                        jugador_local.playerHand.append(c)
-                                cartas_ocultas.clear()
-                                zona_cartas[numero] = []
-                                # jugador_local.isHand = True
+                                continue
                             elif (jugador_local.isHand and jugador_local.canDiscard) or (not can_discard(jugador_local, cartas_descartadas) and len(jugador_local.playerHand) == 1):
 
                                 actualizar_indices_visual_hand(visual_hand)
@@ -2373,17 +2480,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 organizar_habilitado = True
                                 jugador_local.cardDrawn = False
                                 cartas_ocultas.clear()
-
-
-                                # Guarda la carta descartada en el mazo de descarte
-                                for carta in cartas_descartadas:
-                                    if len(cartas_descartadas) == 2 and hasattr(cartas_descartadas[1], "joker") and cartas_descartadas[1].joker:
-                                        mazo_descarte.append(cartas_descartadas[1])
-                                        mazo_descarte.append(cartas_descartadas[0])
-                                        #break
-                                    else:
-                                        #mazo_descarte.append(carta)
-                                        mazo_descarte = round.discards  #Luego de reiniciado el mazo, se duplicaron las cartas
+                                if len(cartas_descartadas) == 2:
+                                    mazo_descarte = list(round.discards)
+                                else:
+                                    #mazo_descarte.append(carta)
+                                    mazo_descarte = round.discards  #Luego de reiniciado el mazo, se duplicaron las cartas
                                 zona_cartas[numero] = []
                                 #print(f"Mano del jugador: {[str(c) for c in jugador_local.playerHand]}")
                                 #print(f"Prueba de isHand ANTES: {[p.isHand for p in players]}")
@@ -2485,7 +2586,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                         print(f"Pila despues de compra: {[c for c in round.pile]}")
                                         jugador_local.playerBuy = False
                                         cartas_ocultas.clear()
-                                        zona_cartas[2] = [] # Limpiamos la zona de descartes.
+                                        numero = 0
+                                        if roundOne or roundTwo:
+                                            numero = 2
+                                        elif roundThree or roundFour:
+                                            numero = 3
+                                        zona_cartas[numero] = [] # Limpiamos la zona de descartes.
                                         print(f"Mano del jugador que compro: {jugador_local.playerHand}")
                                         
                                         # players[indice_mano_actual].playerPass = False
@@ -3120,7 +3226,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 print(f"Pila despues de compra: {[c for c in round.pile]}")
                 jugador_local.playerBuy = False
                 cartas_ocultas.clear()
-                zona_cartas[2] = [] # Limpiamos la zona de descartes.
+                numero = 0
+                if roundOne or roundTwo:
+                    numero = 2
+                elif roundThree or roundFour:
+                    numero = 3
+                zona_cartas[numero] = [] # Limpiamos la zona de descartes.
                 print(f"Mano del jugador que compro: {jugador_local.playerHand}")
 
                 players[indice_mano_actual].isHand = True
@@ -3598,159 +3709,74 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # Lado izquierdo
         #from test3 import players
 
-        # Ejemplo para 2 a 7 jugadores (ajusta según tu layout)
+        # Ejemplo para 2 a 7 jugadores (ajusta según tu layout) ##### prueba loca a ver que sale
+        # --- LÓGICA DE PERSPECTIVA CORREGIDA ---
         jugadores_laterales = []
         jugadores_superiores = []
-        # --- Izquierda (Jugadores 2 y 3) ---
-        # --- Derecha (Jugadores 6 y 7) ---
-        # --- Arriba (Jugadores 4 y 5) ---
+        player_baj_rect = {}      
+        baj_box_to_player = {}
+        # 2. ENCONTRAR INDICE LOCAL
+        # Buscamos en qué posición de la lista 'players' estás tú.
+        n_players = len(players)
+        idx_local = 0
+        if jugador_local:
+            for i, p in enumerate(players):
+                if p.playerId == jugador_local.playerId:
+                    idx_local = i
+                    break
 
-        if len(players) == 2:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[0], jug7))
-        if len(players) == 3:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-                jugadores_laterales.append((players[2], jug3))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[2], jug2))
-                jugadores_laterales.append((players[0], jug7))
-            elif jugador_local == players[2]:
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
-        if len(players) == 4:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-                jugadores_laterales.append((players[2], jug3))
-                jugadores_superiores.append((players[3], jug4))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[2], jug2))
-                jugadores_laterales.append((players[3], jug3))
-                jugadores_laterales.append((players[0], jug7))
-            elif jugador_local == players[2]:
-                jugadores_laterales.append((players[3], jug2))
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
-            elif jugador_local == players[3]:
-                jugadores_superiores.append((players[0], jug5))
-                jugadores_laterales.append((players[1], jug6))
-                jugadores_laterales.append((players[2], jug7))
-        if len(players) == 5:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-                jugadores_laterales.append((players[2], jug3))
-                jugadores_superiores.append((players[3], jug4))
-                jugadores_superiores.append((players[4], jug5))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[2], jug2))
-                jugadores_laterales.append((players[3], jug3))
-                jugadores_superiores.append((players[4], jug4))
-                jugadores_laterales.append((players[0], jug7))
-            elif jugador_local == players[2]:
-                jugadores_laterales.append((players[3], jug2))
-                jugadores_laterales.append((players[4], jug3))
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
-            elif jugador_local == players[3]:
-                jugadores_laterales.append((players[4], jug2))
-                jugadores_superiores.append((players[0], jug5))
-                jugadores_laterales.append((players[1], jug6))
-                jugadores_laterales.append((players[2], jug7))
-            elif jugador_local == players[4]:
-                jugadores_superiores.append((players[0], jug4))
-                jugadores_superiores.append((players[1], jug5))
-                jugadores_laterales.append((players[2], jug6))
-                jugadores_laterales.append((players[3], jug7))
-        if len(players) == 6:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-                jugadores_laterales.append((players[2], jug3))
-                jugadores_superiores.append((players[3], jug4))
-                jugadores_superiores.append((players[4], jug5))
-                jugadores_laterales.append((players[5], jug6))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[2], jug2))
-                jugadores_laterales.append((players[3], jug3))
-                jugadores_superiores.append((players[4], jug4))
-                jugadores_superiores.append((players[5], jug5))
-                jugadores_laterales.append((players[0], jug7))
-            elif jugador_local == players[2]:
-                jugadores_laterales.append((players[3], jug2))
-                jugadores_laterales.append((players[4], jug3))
-                jugadores_superiores.append((players[5], jug4))
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
-            elif jugador_local == players[3]:
-                jugadores_laterales.append((players[4], jug2))
-                jugadores_laterales.append((players[5], jug3))
-                jugadores_superiores.append((players[0], jug5))
-                jugadores_laterales.append((players[1], jug6))
-                jugadores_laterales.append((players[2], jug7))
-            elif jugador_local == players[4]:
-                jugadores_laterales.append((players[5], jug2))
-                jugadores_superiores.append((players[0], jug4))
-                jugadores_superiores.append((players[1], jug5))
-                jugadores_laterales.append((players[2], jug6))
-                jugadores_laterales.append((players[3], jug7))
-            elif jugador_local == players[5]:
-                jugadores_laterales.append((players[0], jug3))
-                jugadores_superiores.append((players[1], jug4))
-                jugadores_superiores.append((players[2], jug5))
-                jugadores_laterales.append((players[3], jug6))
-                jugadores_laterales.append((players[4], jug7))
-        if len(players) == 7:
-            if jugador_local == players[0]:
-                jugadores_laterales.append((players[1], jug2))
-                jugadores_laterales.append((players[2], jug3))
-                jugadores_superiores.append((players[3], jug4))
-                jugadores_superiores.append((players[4], jug5))
-                jugadores_laterales.append((players[5], jug6))
-                jugadores_laterales.append((players[6], jug7))
-            elif jugador_local == players[1]:
-                jugadores_laterales.append((players[2], jug2))
-                jugadores_laterales.append((players[3], jug3))
-                jugadores_superiores.append((players[4], jug4))
-                jugadores_superiores.append((players[5], jug5))
-                jugadores_laterales.append((players[6], jug6))
-                jugadores_laterales.append((players[0], jug7))
-            elif jugador_local == players[2]:
-                jugadores_laterales.append((players[3], jug2))
-                jugadores_laterales.append((players[4], jug3))
-                jugadores_superiores.append((players[5], jug4))
-                jugadores_superiores.append((players[6], jug5))
-                jugadores_laterales.append((players[0], jug6))
-                jugadores_laterales.append((players[1], jug7))
-            elif jugador_local == players[3]:
-                jugadores_laterales.append((players[4], jug2))
-                jugadores_laterales.append((players[5], jug3))
-                jugadores_superiores.append((players[6], jug4))
-                jugadores_superiores.append((players[0], jug5))
-                jugadores_laterales.append((players[1], jug6))
-                jugadores_laterales.append((players[2], jug7))
-            elif jugador_local == players[4]:
-                jugadores_laterales.append((players[5], jug2))
-                jugadores_laterales.append((players[6], jug3))
-                jugadores_superiores.append((players[0], jug4))
-                jugadores_superiores.append((players[1], jug5))
-                jugadores_laterales.append((players[2], jug6))
-                jugadores_laterales.append((players[3], jug7))
-            elif jugador_local == players[5]:
-                jugadores_laterales.append((players[6], jug2))
-                jugadores_laterales.append((players[0], jug3))
-                jugadores_superiores.append((players[1], jug4))
-                jugadores_superiores.append((players[2], jug5))
-                jugadores_laterales.append((players[3], jug6))
-                jugadores_laterales.append((players[4], jug7))
-            elif jugador_local == players[6]:
-                jugadores_laterales.append((players[0], jug2))
-                jugadores_laterales.append((players[1], jug3))
-                jugadores_superiores.append((players[2], jug4))
-                jugadores_superiores.append((players[3], jug5))
-                jugadores_laterales.append((players[4], jug6))
-                jugadores_laterales.append((players[5], jug7))
-        
+        # Mapeo del jugador local (Siempre abajo / baj1)
+        if jugador_local:
+            player_baj_rect[jugador_local.playerName] = boxes.get("baj1")
+            baj_box_to_player["baj1"] = jugador_local
+
+        # 3. DEFINIR LOS ASIENTOS DISPONIBLES EN ORDEN (SENTIDO HORARIO)
+        # Esto define qué cajas se usan visualmente según cuántos jugadores hay.
+        # Formato: (NombreCajaAvatar, TipoDibujado) -> 0=Lateral, 1=Superior/Horizontal
+        seat_map = {
+            2: [("jug4", 1)],                                           # 1 vs 1: Frente
+            3: [("jug2", 0), ("jug7", 0)],                              # Triángulo: Izq, Der
+            4: [("jug2", 0), ("jug4", 1), ("jug7", 0)],                 # Cuadrado: Izq, Arr, Der
+            5: [("jug2", 0), ("jug4", 1), ("jug5", 1), ("jug7", 0)],    # Pentágono
+            6: [("jug2", 0), ("jug3", 0), ("jug4", 1), ("jug6", 0), ("jug7", 0)],
+            7: [("jug2", 0), ("jug3", 0), ("jug4", 1), ("jug5", 1), ("jug6", 0), ("jug7", 0)]
+        }
+
+        # Obtenemos la configuración para la cantidad actual de jugadores
+        config_actual = seat_map.get(n_players, [])
+
+        # 4. ASIGNACIÓN MATEMÁTICA
+        # Recorremos SOLO a los oponentes en orden
+        for i in range(len(config_actual)):
+            # Cálculo del índice relativo:
+            # (MiIndice + 1 + i) % Total -> Nos da el jugador siguiente en la lista circularmente
+            opponent_idx = (idx_local + 1 + i) % n_players
+            
+            # Protección por si la lista cambió repentinamente
+            if opponent_idx < len(players):
+                opponent = players[opponent_idx]
+                box_name, draw_type = config_actual[i]
+                
+                rect_asiento = boxes.get(box_name)
+                # Deducimos el nombre de la bajada (ej: jug2 -> baj2)
+                baj_name = box_name.replace("jug", "baj")
+                rect_bajada = boxes.get(baj_name)
+
+                if rect_asiento:
+                    # A. Asignar Avatar/Mano
+                    if draw_type == 0: # Lateral
+                        jugadores_laterales.append((opponent, rect_asiento))
+                    else: # Superior
+                        jugadores_superiores.append((opponent, rect_asiento))
+                    
+                    # B. Asignar Zona de Cartas Bajadas (Mesa)
+                    if rect_bajada:
+                        # 1. Para saber DÓNDE dibujar las cartas de este jugador
+                        nombre_op = getattr(opponent, "playerName", "Desconocido")
+                        player_baj_rect[nombre_op] = rect_bajada
+                        
+                        # 2. Para saber QUIÉN es el dueño de esa zona (para clicks/drops)
+                        baj_box_to_player[baj_name] = opponent
 
         # Dibuja solo los jugadores activos en los recuadros correspondientes
         # Dibuja solo los jugadores activos en los recuadros correspondientes
@@ -3759,25 +3785,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
         for jugador, recuadro in jugadores_superiores:
             draw_horizontal_pt_hand(jugador, recuadro)
-        # ===== Construir mapeo caja_de_bajada -> jugador =====
-        # Esto asegura que la zona de arrastre (bajN) esté vinculada al jugador correcto
-        baj_box_to_player = {}
-        # jugador_local siempre a baj1 si existe
-        if jugador_local:
-            baj_box_to_player["baj1"] = jugador_local
-        # Buscar por rects asociados (jugX -> bajX)
-        for p, r in jugadores_laterales + jugadores_superiores:
-            # encontrar clave 'jugN' en boxes cuyo rect sea r
-            jug_key = next((k for k, v in boxes.items() if v == r and k.startswith("jug")), None)
-            if jug_key:
-                baj_key = jug_key.replace("jug", "baj")
-                baj_box_to_player[baj_key] = p
-        # fallback: mapear por índice en players si alguna bajX no mapeó
-        for idx, p in enumerate(players):
-            key = f"baj{idx+1}"
-            if key not in baj_box_to_player and key in boxes:
-                baj_box_to_player[key] = p
-
+        # ===== Construir mapeo caja_de_bajada -> jugador (CORREGIDO) =======
         BASE_NOMBRE_SIZE = 14
         BASE_PUNTOS_SIZE = 11
 

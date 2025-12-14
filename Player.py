@@ -189,9 +189,8 @@ class Player:
                     elif self.canExtendStraight(card, player.playMade) and not card.joker:
                         print(f"No se puede descartar {card}: puede extender una seguidilla en la jugada de {player.playerName}.")
                         return None'''
-        
         # hasta aqui los cambios :))))
-        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn:
+        if len(selectedDiscards) == 2 and self.isHand and self.cardDrawn and self.downHand:
 
             #Si seleccionaron dos y la primera es un Joker, se retorna una lista con ambas cartas.
             if selectedDiscards[0].joker:
@@ -243,20 +242,16 @@ class Player:
                 return []
         #Si el jugador no seleccionó ninguna carta, retornamos None.
         else:
-            if len(selectedDiscards) == 0:
-                print("No se ha seleccionado ninguna carta en la zona de descartes")
-            elif len(selectedDiscards) == 2 and (not any(c.joker for c in selectedDiscards) or all(c.joker for c in selectedDiscards)):
-                print("Solo puedes bajar 2 cartas si *una* de ellas es un Joker")
-            elif not self.isHand:
-                print("El jugador no puede descartar porque no es su turno")
-            elif not self.cardDrawn:
-                print("El jugador debe tomar una carta antes de hacer cualquier jugada")
+            if len(selectedDiscards) == 2 and (not any(c.joker for c in selectedDiscards) or all(c.joker for c in selectedDiscards)) and self.downHand:
+                return '001'#print("Solo puedes bajar 2 cartas si *una* de ellas es un Joker")
             elif len(selectedDiscards) == 1 and selectedDiscards[0].joker:
-                print("Para poder descartar un joker, debes descartar también otra carta normal")
-            #elif selectedDiscards[0] == takenCard or selectedDiscards[1] == takenCard:
-                #print("No puedes descartar la carta que recién tomaste")
-            return None
-    
+                return '002'#print("Para poder descartar un joker, debes descartar también otra carta normal")
+            elif len(selectedDiscards)==2 and ( any(c.joker for c in selectedDiscards) or all(c.joker for c in selectedDiscards)) and not self.downHand:
+                return '003' #print("No puedes quemar el mono sino te has bajado")
+            elif not self.cardDrawn:
+                return '004' #print("Debes tomar una carta antes de descartar")
+            else:
+                return []
     def isValidTrioF(self,lista):
         """
         Valida si una lista específica de cartas (propuesta) es un grupo válido.
@@ -314,118 +309,299 @@ class Player:
         print(f"¡Propuesta válida!: {[str(c) for c in lista]}")
         return True
     
-    def isValidStraightF(self,cards):
+    def isValidStraightF(self, cards):
         """
         Verifica si una lista de objetos Card forma una seguidilla válida (Rummy).
-        Requiere que las cartas estén en orden correcto.
-        Reglas:
-        - Mínimo 3 cartas.
-        - Todas las cartas no-Joker deben ser del mismo palo.
-        - Consecutivas (considerando As bajo o alto).
-        - Máximo 2 Jokers, no consecutivos.
-        - Lista debe venir ordenada.
+        NO requiere que las cartas vengan ordenadas.
+        Retorna True o False.
         """
-
         if not cards or len(cards) < 4:
             return False
-        if len(cards) >= 14:
-            first, last = cards[0], cards[-1]
-            if not first.joker and not last.joker and first.value == "A" and last.value == "A":
-                inner = cards[1:-1]
-                # Verificamos que el interior sea del mismo palo y consecutivo (2...K)
-                suits = {c.type for c in inner if not c.joker}
-                if len(suits) == 1:
-                    expected_values = ["2","3","4","5","6","7","8","9","10","J","Q","K"]
-                    inner_values = [c.value for c in inner if not c.joker]
-                    if inner_values == expected_values:
-                        return True
-            jokers = [c for c in cards if c.joker]
-            nonJokers = [c for c in cards if not c.joker]
+
+        # 1. Separar Jokers y Cartas normales
         jokers = [c for c in cards if c.joker]
-        nonJokers = [c for c in cards if not c.joker]
+        non_jokers = [c for c in cards if not c.joker]
+        
+        num_jokers = len(jokers)
 
-        # Máximo 2 jokers
-        if len(jokers) > 2:
+        # Regla: Máximo 2 Jokers
+        if num_jokers > 2:
             return False
 
-        # No 2 jokers consecutivos
-        for a, b in zip(cards, cards[1:]):
-            if a.joker and b.joker:
-                return False
+        # Si todo son jokers no es válido sin referencia de palo
+        if not non_jokers:
+            return False 
 
-        # Todas las cartas no-Joker deben tener el mismo palo
-        suits = {c.type for c in nonJokers}
-        if len(suits) > 1:
+        # 2. Verificar Palo (Suit)
+        first_suit = non_jokers[0].type
+        if any(c.type != first_suit for c in non_jokers):
             return False
 
-        # Función para obtener valor numérico (según modo)
-        def rank(card, highAs=False):
-            if card.joker:
-                return None
-            if card.value == "A":
-                return 14 if highAs else 1
-            return card.numValue()
-
-        # Verifica si la lista está ordenada y consecutiva en un modo
-        def checkStraightInGivenOrder(highAsMode):
-            needed_jokers = 0
-            prev_rank = None
-            prev_card = None
-            for card in cards:
-                if card.joker:
-                    continue
-                curr_rank = rank(card, highAsMode)
-                if prev_rank is not None:
-                    diff = curr_rank - prev_rank
-                    if diff == 0:
-                        return False  # duplicadas
-                    elif diff < 0:
-                        return False  # no está ordenada
-                    elif diff > 1:
-                        needed_jokers += (diff - 1)
-                prev_rank = curr_rank
-                prev_card = card
-
-            return needed_jokers <= len(jokers)
-
-        # Debe estar ordenada en al menos un modo (As bajo o As alto)
-        if checkStraightInGivenOrder(False):
-            if cards[0].joker and cards[1].value == "A":
+        # Función auxiliar interna para verificar la secuencia numérica
+        def check_sequence(values_list):
+            # Ordenamos los valores numéricos de menor a mayor
+            sorted_values = sorted(values_list)
+            
+            # Verificamos duplicados numéricos exactos
+            if len(sorted_values) != len(set(sorted_values)):
                 return False
+            
+            gaps_needed = 0
+            
+            # Recorremos la lista ordenada comparando pares
+            for i in range(len(sorted_values) - 1):
+                current_val = sorted_values[i]
+                next_val = sorted_values[i+1]
+                
+                diff = next_val - current_val
+                
+                # Si diff es 1, son consecutivas (perfecto)
+                # Si diff es 2, falta 1 carta (necesita 1 joker)
+                # Si diff es > 2, faltan 2+ cartas (necesita 2+ jokers seguidos -> invalido)
+                
+                missing_cards = diff - 1
+                
+                if missing_cards > 1: 
+                    return False 
+                
+                gaps_needed += missing_cards
+
+            # Si la cantidad de jokers que tenemos cubre los huecos
+            return gaps_needed <= num_jokers
+
+        # 3. Construcción de listas de valores (Low, High, Mixed)
+        
+        values_low = []   # Todos los Ases valen 1
+        values_high = []  # Todos los Ases valen 14
+        values_mixed = [] # Un As vale 1, el otro 14 (Solo si hay 2+ Ases)
+        
+        # Contamos cuantos Ases hay para saber si activar el modo mixto
+        ace_count = sum(1 for c in non_jokers if c.value == "A")
+        aces_processed = 0
+
+        for c in non_jokers:
+            val = c.numValue() # Asumimos 2-13. Si tu numValue da 1 para As, no importa, lo sobreescribimos abajo.
+            
+            if c.value == "A":
+                # Llenamos listas básicas
+                values_low.append(1)
+                values_high.append(14)
+                
+                # Llenamos lista mixta (si aplica)
+                if ace_count >= 2:
+                    aces_processed += 1
+                    # El primer As que procesamos será el 1, el segundo será el 14
+                    if aces_processed == 1:
+                        values_mixed.append(1)
+                    else:
+                        values_mixed.append(14)
             else:
-                return True
-        elif checkStraightInGivenOrder(True):
-            if cards[-1].joker and cards[-2].value == "A":
-                return False
-            else:
-                return True
+                values_low.append(val)
+                values_high.append(val)
+                if ace_count >= 2:
+                    values_mixed.append(val)
 
-        # Caso especial: secuencia con As al final después de K
-        values = [c.value for c in cards if not c.joker]
-        if "A" in values and "K" in values:
-            # verificamos que A esté al final y orden ascendente hasta K
-            try:
-                last_non_joker = [c for c in cards if not c.joker][-1]
-            except IndexError:
-                return False
-            if last_non_joker.value == "A":
-                # permitir secuencia como 10 J Q K A
-                prev_rank = None
-                needed_jokers = 0
-                for card in cards:
-                    if card.joker:
-                        continue
-                    val = rank(card, True)
-                    if prev_rank is not None:
-                        diff = val - prev_rank
-                        if diff <= 0:
-                            return False
-                        elif diff > 1:
-                            needed_jokers += (diff - 1)
-                    prev_rank = val
-                return needed_jokers <= len(jokers)
-
+        # 4. Verificaciones
+        
+        # Caso 1: As Bajo (A, 2, 3...)
+        if check_sequence(values_low):
+            return True
+        
+        # Caso 2: As Alto (...Q, K, A)
+        if check_sequence(values_high):
+            return True
+            
+        # Caso 3: As Mixto / Vuelta al mundo (A, 2 ... K, A)
+        if ace_count >= 2:
+            if check_sequence(values_mixed):
+                return True
+                
         return False
+        
+    def sortedStraight(self, cards):
+        """
+        Valida y ordena una seguidilla (Straight).
+        Soporta:
+        - As Bajo (A, 2, 3...)
+        - As Alto (...Q, K, A)
+        - As Mixto/Vuelta al mundo (A, 2, ... K, A) si hay 2 Ases.
+        """
+        if not cards or len(cards) < 4:
+            return False
+
+        jokers = [c for c in cards if c.joker]
+        naturals = [c for c in cards if not c.joker]
+
+        if len(jokers) > 2: return False
+        if not naturals: return False 
+
+        # 1. Validar Palo
+        first_suit = naturals[0].type
+        if any(c.type != first_suit for c in naturals):
+            return False
+
+        # --- Función para construir la secuencia ---
+        def try_build(mode):
+            # modes: "LOW" (A=1), "HIGH" (A=14), "MIXED" (Un A=1, otro A=14)
+            
+            temp_naturals = []
+            aces_seen = 0
+            
+            for c in naturals:
+                val = c.numValue()
+                if c.value == "A":
+                    aces_seen += 1
+                    if mode == "LOW":
+                        val = 1
+                    elif mode == "HIGH":
+                        val = 14
+                    elif mode == "MIXED":
+                        # El primer As que veamos será 1, el segundo será 14
+                        # Si hay más de 2 Ases, serán duplicados y fallará luego (correcto)
+                        val = 1 if aces_seen == 1 else 14
+                
+                temp_naturals.append((val, c))
+            
+            # Ordenamos por valor numérico
+            temp_naturals.sort(key=lambda x: x[0])
+            
+            # Verificar duplicados numéricos
+            # Esto evita tener dos "5" o dos Ases asignados al mismo valor
+            for i in range(len(temp_naturals) - 1):
+                if temp_naturals[i][0] == temp_naturals[i+1][0]: 
+                    return None
+
+            built_sequence = []
+            available_jokers = list(jokers)
+            
+            # Construcción de huecos internos
+            curr_rank, curr_card = temp_naturals[0]
+            built_sequence.append(curr_card)
+            
+            for i in range(len(temp_naturals) - 1):
+                next_rank, next_card = temp_naturals[i+1]
+                diff = next_rank - curr_rank
+                
+                if diff == 1:
+                    built_sequence.append(next_card)
+                elif diff == 2:
+                    if not available_jokers: return None
+                    built_sequence.append(available_jokers.pop(0))
+                    built_sequence.append(next_card)
+                else:
+                    return None # Hueco > 1 carta requiere > 1 joker consecutivo
+                
+                curr_rank = next_rank
+
+            # Gestión de extremos (Punta y Cola) para jokers sobrantes
+            
+            # Helper para obtener rango lógico ya asignado en la lista
+            def get_rank(c, index_in_seq):
+                if c.joker: return None
+                if c.value == "A":
+                    # Si estamos en modo MIXED, deducimos por posición
+                    if mode == "MIXED":
+                         # Si el As está al principio es 1, si está al final es 14
+                         # Pero cuidado con el sort. Mejor miramos el vecino.
+                         pass
+                    return 14 if mode == "HIGH" else 1
+                return c.numValue()
+            
+            # Nota: En modo MIXED con el sort hecho, el As(1) está al principio 
+            # y el As(14) al final. Los numValue() simples funcionan para los límites.
+
+            # 1. Rellenar COLA (Derecha)
+            while available_jokers:
+                last_card = built_sequence[-1]
+                # Logica simplificada para saber el valor del ultimo
+                last_val = None
+                if not last_card.joker:
+                    if last_card.value == "A":
+                        last_val = 14 if (mode == "HIGH" or (mode == "MIXED" and built_sequence.index(last_card) > 0)) else 1
+                    else:
+                        last_val = last_card.numValue()
+                else:
+                    # Inferir del penultimo
+                    prev_card = built_sequence[-2]
+                    # Recursividad simple o hardcodeo seguro
+                    if not prev_card.joker:
+                        if prev_card.value == "A":
+                             p_val = 14 if (mode == "HIGH" or mode=="MIXED") else 1 # Asumiendo As al final
+                        else:
+                             p_val = prev_card.numValue()
+                        last_val = p_val + 1
+                    else:
+                        return None # Demasiados jokers al final sin referencia
+
+                limit = 14 # Siempre 14 como maximo teorico
+                if last_val < limit:
+                     built_sequence.append(available_jokers.pop(0))
+                else:
+                    break
+
+            # 2. Rellenar PUNTA (Izquierda)
+            while available_jokers:
+                first_card = built_sequence[0]
+                first_val = None
+                
+                if not first_card.joker:
+                     if first_card.value == "A":
+                         first_val = 1 if (mode == "LOW" or mode == "MIXED") else 14
+                     else:
+                         first_val = first_card.numValue()
+                else:
+                     # Inferir del segundo
+                     next_card = built_sequence[1]
+                     if not next_card.joker:
+                         if next_card.value == "A":
+                             n_val = 14 # Raro caso Joker-As(High)
+                         else:
+                             n_val = next_card.numValue()
+                         first_val = n_val - 1
+                     else:
+                         return None
+                
+                limit_low = 1
+                if first_val > limit_low:
+                    built_sequence.insert(0, available_jokers.pop(0))
+                else:
+                    return None 
+
+            return built_sequence
+
+        # --- Ejecución de Modos ---
+        candidates = []
+
+        # 1. Probar As Bajo
+        s1 = try_build("LOW")
+        if s1: candidates.append(s1)
+
+        # 2. Probar As Alto
+        s2 = try_build("HIGH")
+        if s2: candidates.append(s2)
+        
+        # 3. Probar Mixto (Solo si hay más de 1 As)
+        ace_count = sum(1 for c in naturals if c.value == "A")
+        if ace_count >= 2:
+            s3 = try_build("MIXED")
+            if s3: candidates.append(s3)
+
+        if not candidates:
+            return False
+
+        # --- Selección del Mejor Candidato ---
+        best = candidates[0]
+        for seq in candidates:
+            if seq == cards: return True # Orden original perfecto
+            
+            # Preferencia: Joker al final
+            if seq[-1].joker and not best[-1].joker:
+                best = seq
+            # Preferencia secundaria: Secuencia más larga (en caso de logicas raras)
+            elif len(seq) > len(best):
+                best = seq
+                
+        return best
 
 
 
