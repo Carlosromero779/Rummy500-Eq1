@@ -414,10 +414,92 @@ class Player:
         # Caso 3: As Mixto / Vuelta al mundo (A, 2 ... K, A)
         if ace_count >= 2:
             if check_sequence(values_mixed):
-                return True
-                
+                return True              
         return False
+    def isValidStraightFJoker(self, cards):
+        """
+        Verifica si una lista de objetos Card forma una seguidilla válida (Rummy).
+        REQUIERE que las cartas vengan en el orden correcto.
+        Retorna True o False.
+        """
+        if not cards or len(cards) < 4:
+            return False
+
+        # 1. Separar Jokers y Cartas normales (manteniendo el índice)
+        non_jokers_info = [(i, c) for i, c in enumerate(cards) if not c.joker]
+        num_jokers = len(cards) - len(non_jokers_info)
+
+        # Regla: Máximo 2 Jokers y debe haber al menos una carta normal
+        if num_jokers > 2 or not non_jokers_info:
+            return False
+        # --- NUEVA VALIDACIÓN: No permitir Jokers consecutivos ---
+        for i in range(len(cards) - 1):
+            if cards[i].joker and cards[i+1].joker:
+                return False
+        # 2. Verificar que todas las cartas normales sean del mismo palo (Suit)
+        first_suit = non_jokers_info[0][1].type
+        if any(c.type != first_suit for i, c in non_jokers_info):
+            return False
+
+        # 3. Función auxiliar para validar linealidad según el valor asignado al As
+        def check_ordered_sequence(ace_mode):
+            """
+            ace_mode: 
+            'low' (todos los A=1), 
+            'high' (todos los A=14), 
+            'mixed' (primer A=1, segundo A=14)
+            """
+            temp_values = []
+            aces_seen = 0
+            
+            for i, card in enumerate(cards):
+                if card.joker:
+                    temp_values.append(None)
+                elif card.value == "A":
+                    aces_seen += 1
+                    if ace_mode == 'low': temp_values.append(1)
+                    elif ace_mode == 'high': temp_values.append(14)
+                    elif ace_mode == 'mixed':
+                        temp_values.append(1 if aces_seen == 1 else 14)
+                else:
+                    temp_values.append(card.numValue())
+
+            # Buscamos la primera carta que no sea Joker para usarla como pivote
+            pivot_idx = -1
+            pivot_val = -1
+            for i, val in enumerate(temp_values):
+                if val is not None:
+                    pivot_idx, pivot_val = i, val
+                    break
+            
+            # Validar la secuencia
+            for i, val in enumerate(temp_values):
+                # El valor que "debería" tener la carta en esta posición
+                expected_val = pivot_val + (i - pivot_idx)
+                
+                # 1. Si el valor esperado se sale del rango de una baraja (1-14)
+                if expected_val < 1 or expected_val > 14:
+                    return False
+                
+                # 2. Si es una carta normal, debe coincidir exactamente con el esperado
+                if val is not None and val != expected_val:
+                    return False
+                    
+            return True
+
+        # 4. Probar los 3 escenarios posibles de interpretación de los Ases
+        # Caso A: Ases como 1 (A-2-3-4)
+        if check_ordered_sequence('low'): return True
         
+        # Caso B: Ases como 14 (J-Q-K-A)
+        if check_ordered_sequence('high'): return True
+        
+        # Caso C: Mixto (A-2...K-A) - Solo si hay al menos 2 Ases
+        ace_count = sum(1 for _, c in non_jokers_info if c.value == "A")
+        if ace_count >= 2 and check_ordered_sequence('mixed'):
+            return True
+
+        return False
     def sortedStraight(self, cards):
         """
         Valida y ordena una seguidilla (Straight).
@@ -510,63 +592,40 @@ class Player:
             # Nota: En modo MIXED con el sort hecho, el As(1) está al principio 
             # y el As(14) al final. Los numValue() simples funcionan para los límites.
 
-            # 1. Rellenar COLA (Derecha)
+           # 1. Rellenar COLA (Derecha)
             while available_jokers:
+                if not built_sequence: break
                 last_card = built_sequence[-1]
-                # Logica simplificada para saber el valor del ultimo
-                last_val = None
-                if not last_card.joker:
-                    if last_card.value == "A":
-                        last_val = 14 if (mode == "HIGH" or (mode == "MIXED" and built_sequence.index(last_card) > 0)) else 1
-                    else:
-                        last_val = last_card.numValue()
-                else:
-                    # Inferir del penultimo
-                    prev_card = built_sequence[-2]
-                    # Recursividad simple o hardcodeo seguro
-                    if not prev_card.joker:
-                        if prev_card.value == "A":
-                             p_val = 14 if (mode == "HIGH" or mode=="MIXED") else 1 # Asumiendo As al final
-                        else:
-                             p_val = prev_card.numValue()
-                        last_val = p_val + 1
-                    else:
-                        return None # Demasiados jokers al final sin referencia
-
-                limit = 14 # Siempre 14 como maximo teorico
-                if last_val < limit:
-                     built_sequence.append(available_jokers.pop(0))
+                
+                # REGLA: No poner Joker si el último ya es Joker
+                if last_card.joker: break 
+                
+                last_val = 14 if (last_card.value == "A" and (mode == "HIGH" or mode == "MIXED")) else last_card.numValue()
+                
+                if last_val < 14:
+                    built_sequence.append(available_jokers.pop(0))
                 else:
                     break
 
             # 2. Rellenar PUNTA (Izquierda)
             while available_jokers:
+                if not built_sequence: break
                 first_card = built_sequence[0]
-                first_val = None
                 
-                if not first_card.joker:
-                     if first_card.value == "A":
-                         first_val = 1 if (mode == "LOW" or mode == "MIXED") else 14
-                     else:
-                         first_val = first_card.numValue()
-                else:
-                     # Inferir del segundo
-                     next_card = built_sequence[1]
-                     if not next_card.joker:
-                         if next_card.value == "A":
-                             n_val = 14 # Raro caso Joker-As(High)
-                         else:
-                             n_val = next_card.numValue()
-                         first_val = n_val - 1
-                     else:
-                         return None
+                # REGLA: No poner Joker si el primero ya es Joker
+                if first_card.joker: break
                 
-                limit_low = 1
-                if first_val > limit_low:
-                    built_sequence.insert(0, available_jokers.pop(0))
+                first_val = 1 if (first_card.value == "A" and (mode == "LOW" or mode == "MIXED")) else first_card.numValue()
+                
+                if first_val > 1:
+                    # Seguridad adicional para el IndexError
+                    if available_jokers:
+                        built_sequence.insert(0, available_jokers.pop(0))
+                    else:
+                        break
                 else:
-                    return None 
-
+                    return None # Bloqueado por As
+                    
             return built_sequence
 
         # --- Ejecución de Modos ---
@@ -603,239 +662,176 @@ class Player:
                 
         return best
 
+    # --- EN Player.py ---
 
-
-    def insertCard(self, targetPlayer, targetPlayIndex, cardToInsert, position=None):
+    def checkJokerSwap(self, straight):
         """
-        Inserta una carta en targetPlayer.playMade[targetPlayIndex].
-        position: 'start', 'end' o None para sustitución de Joker.
-        Requisitos: self.downHand == True y cardToInsert in self.playerHand
+        Verifica si un Joker en el extremo de una seguidilla puede moverse al otro extremo
+        manteniendo la validez visual y lógica.
+        IMPIDE: Poner Joker antes de As bajo (ej: [Joker, A, 2]) o después de As alto.
         """
+        if not straight or len(straight) < 3:
+            return False
+        
+        # 1. Identificar si hay Joker en los extremos
+        start_is_joker = getattr(straight[0], "joker", False)
+        end_is_joker = getattr(straight[-1], "joker", False)
+        # NUEVA REGLA: Si ambos extremos son Joker, el movimiento resultaría en
+        # Jokers consecutivos (ej: [J, 5, 6, J] -> [5, 6, J, J]). 
+        # Retornamos False para impedirlo.
+        if start_is_joker and end_is_joker:
+            return False
+        
+        if not start_is_joker and not end_is_joker:
+            return False
+            
+        # 2. Simular el cambio en una lista temporal
+        temp_straight = straight.copy()
+        
+        if start_is_joker:
+            # Mover de INICIO -> FINAL (ej: [Joker, 2, 3] -> [2, 3, Joker])
+            joker = temp_straight.pop(0)
+            temp_straight.append(joker)
+            
+            # VALIDACIÓN FRONTERA SUPERIOR:
+            # La carta anterior al nuevo joker (penúltima)
+            prev_card = temp_straight[-2] 
+            # Si termina en As (ej: Q, K, A), no podemos poner Joker después (no existe 15)
+            if not getattr(prev_card, "joker", False) and prev_card.value == "A":
+                return False
 
+        elif end_is_joker:
+            # Mover de FINAL -> INICIO (ej: [As, 2, Joker] -> [Joker, As, 2])
+            joker = temp_straight.pop(-1)
+            temp_straight.insert(0, joker)
+            
+            # VALIDACIÓN FRONTERA INFERIOR:
+            # La carta siguiente al nuevo joker (segunda posición)
+            neighbor = temp_straight[1]
+            # Si empieza en As (ej: A, 2, 3), no podemos poner Joker antes (no existe 0)
+            if not getattr(neighbor, "joker", False) and neighbor.value == "A":
+                return False
+            
+        # 3. Validación matemática estándar
+        return self.isValidStraightF(temp_straight)
+
+    def executeJokerSwap(self, playIndex, straight_ref):
+        """
+        Realiza el movimiento físico del Joker de un extremo al otro en la memoria del jugador.
+        """
+        if playIndex < 0 or playIndex >= len(self.playMade):
+            return
+
+        # Obtener la referencia a la lista real dentro de playMade
+        target_play = self.playMade[playIndex]
+        
+        # Si la jugada es un diccionario (ej: {'straight': [...]}), extraemos la lista
+        if isinstance(target_play, dict):
+            if "straight" in target_play:
+                cards = target_play["straight"]
+            else:
+                return # No es una seguidilla
+        else:
+            cards = target_play # Es una lista directa
+
+        # Verificar extremos y mover
+        if not cards: return
+        
+        start_is_joker = getattr(cards[0], "joker", False)
+        end_is_joker = getattr(cards[-1], "joker", False)
+
+        if start_is_joker:
+            joker = cards.pop(0)
+            cards.append(joker)
+        elif end_is_joker:
+            joker = cards.pop(-1)
+            cards.insert(0, joker)
+        
+        # Actualizar también jugadas_bajadas para que se refleje visualmente de inmediato
+        if hasattr(self, "jugadas_bajadas") and playIndex < len(self.jugadas_bajadas):
+            # Forzamos una copia visual actualizada
+            self.jugadas_bajadas[playIndex] = list(cards)
+
+    def insertCard(self, targetPlayer, targetPlayIndex, cardToInsert, position=None, jokerIndex = None):
         # 1) Validaciones básicas
         if not self.downHand:
-            print(f"❌ {self.playerName} no puede insertar cartas: aún no se ha bajado.")
             return False
         
         if not self.isHand:
-            print(f"❌ {self.playerName} no puede insertar cartas aún porque no es su turno.")
-
+            print(f"No es el turno de {self.playerName}")
+            # Opcional: retornar False o permitirlo si es compra
+        if not self.cardDrawn:
+            return False
         if cardToInsert not in self.playerHand:
-            print(f"❌ {self.playerName} no tiene la carta {cardToInsert} en su mano.")
             return False
 
         if targetPlayIndex < 0 or targetPlayIndex >= len(targetPlayer.playMade):
-            print("❌ El índice dado para la jugada objetivo es inválido.")
             return False
 
         targetPlay = targetPlayer.playMade[targetPlayIndex]
-        temporalPlay = targetPlay.copy()
-
-
-
-        # Mapa para ranks (A tratado luego según modo)
-        valueToRank = {
-            "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
-            "8": 8, "9": 9, "10": 10, "J": 11, "Q": 12, "K": 13
-        }
-        def string_to_card(c):
-            if isinstance(c,str):
-                if c == "Joker":
-                    return Card("Joker", "", joker=True)
-                else:
-                    value = c[:-1]    # todo menos el último carácter (valor)
-                    suit = c[-1]      # último carácter (palo)
-                    return Card(value, suit)
-            else:
-                return c
-        def isJoker(c):
-            return getattr(c, "joker", False)
-
-        # ---------- Validación TRÍO ----------
-        def isValidTrio(play1):
-            # Un trío debe tener exactamente 3 cartas (o 3 con 1 Joker)
-            play = [c for c in play1["trio"]] if isinstance(play1,dict) else play1
-            if len(play) < 3:
-                return False
-            jokers = [c for c in play if isJoker(c)]
-            nonJokers = [c for c in play if not isJoker(c)]
-            # Regla: no más de 1 joker en trío
-            if len(jokers) > 1:
-                return False
-            if len(nonJokers) == 0:
-                return False
-            values = [c.value for c in nonJokers]
-            return len(set(values)) == 1
-
-        # ---------- Validación SEGUIDILLA ----------
-        def isValidStraight(play):
-            # Debe tener al menos 4 cartas totales
-            if len(play) < 4:
-                return False
-
-            # No permitir jokers adyacentes
-            for i in range(len(play) - 1):
-                if isJoker(play[i]) and isJoker(play[i + 1]):
-                    return False
-
-            # Validar palos (los no-jokers deben pertenecer al mismo palo)
-            suits = [c.type for c in play if not isJoker(c)]
-            if len(suits) == 0:
-                return False
-            if len(set(suits)) > 1:
-                return False
-
-            # Intentaremos ambos modos: As como bajo (A=1) y As como alto (A=14)
-            for highAs in (False, True):
-                # Construir lista de ranks (None para jokers)
-                ranks = []
-                okMode = True #
-                for c in play:
-                    if isJoker(c):
-                        ranks.append(None)
-                    else:
-                        if c.value == "A":
-                            r = 14 if highAs else 1
-                        else:
-                            if c.value not in valueToRank:
-                                okMode = False
-                                break
-                            r = valueToRank[c.value]
-                        ranks.append(r)
-                if not okMode:
-                    continue
-
-                # Debe haber al menos un non-joker para fijar la base
-                nonIndex = [i for i, r in enumerate(ranks) if r is not None]
-                if not nonIndex:
-                    continue
-
-                # Calcular el "base" candidato: r - pos para cada non-joker
-                baseSet = set(ranks[i] - i for i in nonIndex)
-                if len(baseSet) != 1:
-                    continue
-                base = baseSet.pop()
-
-                # Comprobar que los expected ranks estén en 1..14 y coincidan con non-jokers
-                expectedOk = True
-                for pos, r in enumerate(ranks):
-                    expected = base + pos
-                    if expected < 1 or expected > 14:
-                        expectedOk = False
-                        break
-                    if r is not None and r != expected:
-                        expectedOk = False
-                        break
-                if not expectedOk:
-                    continue
-
-                # Reglas específicas con As:
-                # Si hay un As en play:
-                for i, c in enumerate(play):
-                    if not isJoker(c) and c.value == "A":
-                        # As como bajo: no debe haber ningún Joker antes de esa A
-                        if not highAs:
-                            if any(isJoker(play[j]) for j in range(0, i)):
-                                expectedOk = False
-                                break
-                        # As como alto: no debe haber ningún Joker después de esa A
-                        else:
-                            if any(isJoker(play[j]) for j in range(i + 1, len(play))):
-                                expectedOk = False
-                                break
-                if not expectedOk:
-                    continue
-
-                # Si llegamos hasta aquí, el modo es válido => la secuencia es válida
-                return True
-
-            # Ningún modo válido
-            return False
-
-    # ---------- Detectar si la jugada objetivo "parece" trío ----------
-        def isTrioLike(play):
-            # heurística: si la mayoría de cartas no-joker comparten valor y longitud <= 4
-            nonJokers = [c for c in play if not isJoker(c)]
-            if not nonJokers:
-                return False
-            values = [string_to_card(c).value if isinstance(c,str) else c.value for c in nonJokers]
-            return len(play) <= 4 and len(set(values)) == 1
-
-        isTrioTarget = isTrioLike(targetPlay)
-
-        # Helper: extrae la lista interna (y su clave en caso de dict) de una jugada
-        def _extract_play_list(play):
-            """Devuelve (lista, key) donde key es 'trio'|'straight' o None si play es lista.
-            Si play es dict y no contiene las claves esperadas, devuelve el primer valor encontrado."""
+        
+        # Helper para extraer la lista de cartas (sea dict o list)
+        def _extract_list(play):
             if isinstance(play, dict):
-                if "trio" in play:
-                    return play["trio"], "trio"
-                if "straight" in play:
-                    return play["straight"], "straight"
-                # fallback: devolver primer valor
-                for k, v in play.items():
-                    return v, k
-            return play, None
+                return play.get("straight") or play.get("trio") or [], "straight" if "straight" in play else "trio"
+            # Lógica robusta: Si las dos primeras cartas normales tienen mismo valor, es trío
+            naturals = [c for c in play if not getattr(c, "joker", False)]
+            if len(naturals) >= 2:
+                # Si todas las cartas naturales tienen el mismo valor, es un trío
+                if all(c.value == naturals[0].value for c in naturals):
+                    return play, "trio"
+            return play, "straight"
+        
+        cartas_lista, tipo_jugada = _extract_list(targetPlay)
+        temporal_list = cartas_lista.copy()
 
-        # ---------- Simular la operación ----------
-        temporal_list, temporal_key = _extract_play_list(temporalPlay)
-
-        if position is None:
-            # sustitución: buscar primer Joker en la lista interna
-            jokerIndex = next((i for i, c in enumerate(temporal_list) if isJoker(c)), None)
-            if jokerIndex is None:
-                print("❌ No hay Joker para sustituir en esta jugada.")
-                return False
-            temporal_list[jokerIndex] = cardToInsert
+        # 2) Simular la operación
+        if position is None: # Sustitución de Joker
+            # CAMBIO AQUÍ: Si recibimos un índice específico, lo usamos. 
+            # Si no, buscamos el primero como respaldo (fallback).
+            if jokerIndex is not None:
+                joker_idx = jokerIndex
+            else:
+                joker_idx = next((i for i, c in enumerate(temporal_list) if getattr(c, "joker", False)), None)
+                
+            if joker_idx is None: return False
+            temporal_list[joker_idx] = cardToInsert
         elif position == "start":
             temporal_list.insert(0, cardToInsert)
         elif position == "end":
             temporal_list.append(cardToInsert)
+
+        # 3) VALIDACIÓN UNIFICADA
+        # Usamos las funciones robustas de la clase
+        if tipo_jugada == "trio":
+            valido = self.isValidTrioF(temporal_list)
         else:
-            print("❌ Posición inválida. Usa 'start', 'end' o None.")
+            valido = self.isValidStraightF(temporal_list)
+
+        if not valido:
+            print(f"Movimiento inválido lógicamente para {tipo_jugada}")
             return False
 
-        # ---------- Validar la jugada simulada (sin depender de findStraight/findTrios) ----------
-        # Validar la jugada simulada (trabajando sobre la lista interna extraída)
-        if isTrioTarget:
-            valid = isValidTrio(temporal_list)
-        else:
-            valid = isValidStraight(temporal_list)
-
-        if not valid:
-            if isTrioTarget:
-                print("❌ La sustitución/inserción rompe el trío: operación rechazada.")
-                print(f"Trío si se agregase dicha carta: {[str(c) for c in temporal_list]}")
-            else:
-                print("❌ La carta no puede insertarse: la seguidilla resultante no es válida.")
-                print(f"Seguidilla si se agregase dicha carta: {[str(c) for c in temporal_list]}")
-            return False
-
-        # ---------- Aplicar cambios reales ----------
-        # ---------- Aplicar cambios reales ----------
-        target_list, target_key = _extract_play_list(targetPlay)
+        # 4) Aplicar cambios reales y devolver Joker si fue sustitución
         if position is None:
-            # Reemplazar el Joker real y devolver esa instancia de Joker a la mano del que inserta
-            jokerIndexReal = next((i for i, c in enumerate(target_list) if isJoker(c)), None)
-            if jokerIndexReal is None:
-                print("❌ (race) No hay Joker real para sustituir.")
-                return False
-            replacedJoker = target_list[jokerIndexReal]
-            target_list[jokerIndexReal] = cardToInsert
-            # quitar carta del que inserta y devolver el Joker real a su mano
+            replaced_joker = cartas_lista[joker_idx]
+            cartas_lista[joker_idx] = cardToInsert
             self.playerHand.remove(cardToInsert)
-            self.playerHand.append(replacedJoker)
-            print(f"🔄 {self.playerName} sustituyó un Joker con {cardToInsert} (Joker -> mano).")
-            return True
+            self.playerHand.append(replaced_joker)
         else:
-            # Insert real al inicio o final (trabajando sobre la lista interna)
             if position == "start":
-                target_list.insert(0, cardToInsert)
+                cartas_lista.insert(0, cardToInsert)
             else:
-                target_list.append(cardToInsert)
-            print(f"⬅️ {self.playerName} agregó {cardToInsert} al inicio de la jugada." if position == 'start' else f"➡️ {self.playerName} agregó {cardToInsert} al final de la jugada.")
+                cartas_lista.append(cardToInsert)
             self.playerHand.remove(cardToInsert)
-            return True
+        
+        # IMPORTANTE: Re-ordenar visualmente si es una escalera
+        '''if tipo_jugada == "straight":
+            nueva_ordenada = self.sortedStraight(cartas_lista)
+            if nueva_ordenada and isinstance(nueva_ordenada, list):
+                cartas_lista[:] = nueva_ordenada'''
+
+        return True
 
     # Mét. para cambiar el valor de "playerPass" para saber si, en un turno dado, pasó de la carta del
     # descarte y agarró del mazo de disponibles. Servirá para la compra de cartas de los siguientes

@@ -166,7 +166,7 @@ class NetworkManager:
         try:
             while self.running:
                 try:
-                    data = conn.recv(6114)
+                    data = conn.recv(8192)
                     if not data:
                         break
                         
@@ -352,7 +352,7 @@ class NetworkManager:
         """Recibe datos del servidor"""
         while self.running and self.player:
             try:
-                data = self.player.recv(6114) #2048->4096
+                data = self.player.recv(8192) #2048->4096
                 if not data:
                     print("Conexion cerrada por el servidor")
                     break
@@ -383,7 +383,7 @@ class NetworkManager:
                         self.incoming_messages.append(("chat", received_data)) 
                         print(f"Mensaje de chat/notificación recibido: {received_data}")
    
-                    elif isinstance(received_data, dict) and received_data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA", "FIN_CICLO_COMPRA","INSERTAR_CARTA","PASAR_COMPRA","REALIZAR_COMPRA"]:
+                    elif isinstance(received_data, dict) and received_data.get("type") in ["BAJARSE","TOMAR_DESCARTE", "TOMAR_CARTA", "DESCARTE", "COMPRAR_CARTA", "PASAR_DESCARTE", "INICIAR_COMPRA","INSERTAR_CARTA","PASAR_COMPRA","REALIZAR_COMPRA","SWAP_JOKER"]:
                         self.moves_game.append(received_data)
                         print(f" Jugada del jugador recibida:{received_data.get("type"),self.moves_game}")
                     # Si es otro tipo de estructura/mensaje no clasificado
