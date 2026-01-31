@@ -23,9 +23,10 @@ class Player:
         self.playerPass = False #Atrib. experimental, para saber si el jugador en turno pasó de la carta descartada.
         self.winner = False #Nos permitirá saber si el jugador fue el ganador
         self.cardDrawn = False #Nos permitirá saber si el jugador tomó una carta en su turno (definido por isHand)
-        self.connected = False #Nos permitirá saber si el jugador está conectado al servidor o no
+        self.disconnected = False #Nos permitirá saber si el jugador estaba conectado al servidor o no, o si se desconectó. self.is_connected = False #Nos permitirá saber si el jugador está conectado al servidor o no
         self.carta_elegida = False  #NUEVO PARA PRUEBA
         self.discarded = False
+        self.isSpectator = False # Indica si el jugador ha sido eliminado y solo observa
         self.canDiscard = True # Atrib. que permite bloquear o desbloquear el descarte (para compra de cartas)
 
     def __str__(self):
@@ -203,6 +204,8 @@ class Player:
                 selectedDiscards.remove(jokerDiscarded)
                 selectedDiscards = []
                 round.discards.append(jokerDiscarded)
+                jokerDiscarded.discarded_by = self.playerId
+                cardDiscarded.discarded_by = self.playerId
                 round.discards.append(cardDiscarded)
                 self.discarded = True
                 # self.isHand = False
@@ -219,6 +222,8 @@ class Player:
                 selectedDiscards.remove(jokerDiscarded)
                 selectedDiscards = []
                 round.discards.append(jokerDiscarded)
+                jokerDiscarded.discarded_by = self.playerId
+                cardDiscarded.discarded_by = self.playerId
                 round.discards.append(cardDiscarded)
                 self.discarded = True
                 # self.isHand = False
@@ -230,6 +235,7 @@ class Player:
             cardDiscarded = selectedDiscards[0]
             try:
                 self.playerHand.remove(cardDiscarded)
+                cardDiscarded.discarded_by = self.playerId
                 round.discards.append(cardDiscarded)
                 selectedDiscards.remove(cardDiscarded)
                 selectedDiscards = []
@@ -309,7 +315,7 @@ class Player:
         print(f"¡Propuesta válida!: {[str(c) for c in lista]}")
         return True
     
-    def isValidStraightF(self, cards):
+    def isValidStraightF(self, cards, max_jokers=2):
         """
         Verifica si una lista de objetos Card forma una seguidilla válida (Rummy).
         NO requiere que las cartas vengan ordenadas.
@@ -325,7 +331,7 @@ class Player:
         num_jokers = len(jokers)
 
         # Regla: Máximo 2 Jokers
-        if num_jokers > 2:
+        if num_jokers > max_jokers:
             return False
 
         # Si todo son jokers no es válido sin referencia de palo
@@ -869,12 +875,15 @@ class Player:
         totalPoints = 0
         for card in self.playerHand:
             if card.joker:
-                totalPoints += 25
+                totalPoints += 100
             elif card.value in ["K", "Q", "J", "10"]:
                 totalPoints += 10
             elif card.value == "A":
                 totalPoints += 20
             else:
-                totalPoints += 5
+                totalPoints += 5 ### cambiar a 5 no se te olvide
         self.playerPoints += totalPoints
+        if self.playerPoints >= 500:
+            self.isSpectator = True
+            print(f"Jugador {self.playerName} ha alcanzado {self.playerPoints} puntos y ahora es ESPECTADOR.")
         return totalPoints
